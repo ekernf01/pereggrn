@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 import anndata
 from scipy.stats import spearmanr as spearmanr
+from scipy.stats import rankdata as rank
 import os 
 import sys
 import gc
@@ -85,17 +86,41 @@ def makeMainPlots(
             vlnplot[metric].save(f'{outputs}/{metric}.html')    
     return vlnplot
 
-def addGeneMetadata(df, adata):
-
-    # Measures derived from the expression data, e.g. overdispersion
+def addGeneMetadata(df, adata, adata_test):
+    # Measures derived from the test data, e.g. effect size
+    perturbation_characteristics = [
+       'fraction_missing',
+       'logFC', 
+       'spearmanCorr', 
+       'pearsonCorr', 
+       'logFCNorm2',
+    ]
+    perturbation_characteristics_available = []
+    for x in perturbation_characteristics:
+        if x not in df.columns: 
+            if x in adata_test.obs.columns:
+                perturbation_characteristics_available.append(x)
+                df = pd.merge(
+                    adata_test.obs.loc[:,[x]],
+                    df.copy(),
+                    how = "outer", # Will deal with missing info later
+                    left_index=True, 
+                    right_on="gene")
+        else:
+            perturbation_characteristics_available.append(x)
+    perturbation_characteristics = perturbation_characteristics_available
+    
+    # Measures derived from the training data, e.g. overdispersion
     expression_characteristics = [
         'highly_variable', 'highly_variable_rank', 'means',
         'variances', 'variances_norm'
     ]
+    expression_characteristics = [e for e in expression_characteristics if e in adata.var.columns]
     if any(not x in df.columns for x in expression_characteristics):
         df = pd.merge(
-            adata.var,
+            adata.var[expression_characteristics],
             df.copy(),
+            how = "outer", # Will deal with missing info later
             left_index=True, 
             right_on="gene")
 
@@ -120,6 +145,7 @@ def addGeneMetadata(df, adata):
         df = pd.merge(
             evolutionary_constraint,
             df.copy(),
+            how = "outer", # Will deal with missing info later
             left_on="gene", 
             right_on="gene")
     
@@ -139,6 +165,7 @@ def addGeneMetadata(df, adata):
         df = pd.merge(
             degree,
             df.copy(),
+            how = "outer", # Will deal with missing info later
             left_on="gene", 
             right_on="gene")
     try:
@@ -146,41 +173,52 @@ def addGeneMetadata(df, adata):
     except:
         pass
     return df, {
+        "perturbation_characteristics": perturbation_characteristics,
         "evolutionary_characteristics":evolutionary_characteristics,
         "expression_characteristics": expression_characteristics, 
         "degree_characteristics": degree_characteristics,
-        }
+    }
 
-def studyPredictableGenes(evaluationPerTarget, train_data, save_path, factor_varied, genes_considered_as):
+def studyPredictableGenes(evaluationPerTarget, train_data, test_data, save_path, factor_varied, genes_considered_as):
     # Plot various factors against our per-gene measure of predictability 
-    evaluationPerTarget, types_of_gene_data = addGeneMetadata(evaluationPerTarget, train_data)
+    evaluationPerTarget, types_of_gene_data = addGeneMetadata(evaluationPerTarget, train_data, test_data)
     types_of_gene_data["out-degree"] = [s for s in types_of_gene_data["degree_characteristics"] if "out-degree" in s]
     types_of_gene_data["in-degree"]  = [s for s in types_of_gene_data["degree_characteristics"] if "in-degree" in s]
     for t in types_of_gene_data.keys():
+        if len(types_of_gene_data[t])==0:
+            continue
+        print(f"Plotting prediction error by {t}")
         long_data = pd.melt(
             evaluationPerTarget, 
-            id_vars=["model_beats_mean_on_this_gene", factor_varied], 
+            id_vars=[factor_varied, "mae_benefit"], 
             value_vars=types_of_gene_data[t], 
             var_name='property_of_gene', 
             value_name='value', 
             col_level=None, 
             ignore_index=True)
-        long_data[f"{factor_varied}_"] = long_data[factor_varied].astype(str) + "__" + long_data["model_beats_mean_on_this_gene"].astype(str)
-        chart = alt.Chart(long_data).mark_boxplot().encode(
-                x = f'{factor_varied}_',
-                y = "value:Q",
-                color='model_beats_mean_on_this_gene:N',
-            ).facet(
-                "property_of_gene:N", 
-                columns= 10,
-            ).resolve_scale(
-                y='independent'
-            )
+        long_data["value"] = [float(x) for x in long_data["value"]]
+        long_data = long_data.loc[long_data["value"].notnull(), :]
+        long_data["value_binned"] = long_data.groupby(["property_of_gene", factor_varied])[["value"]].transform(lambda x: pd.cut(rank(x), bins=5))
+        long_data = long_data.groupby(["property_of_gene", factor_varied, "value_binned"]).agg('median').reset_index()
+        del long_data["value_binned"]
+        chart = alt.Chart(long_data).mark_point().encode(
+            x = "value:Q",
+            y = "mae_benefit:Q",
+            color=alt.Color(factor_varied, scale=alt.Scale(scheme='category20')),
+        )
+        chart = chart + chart.mark_line()
+        chart = chart.facet(
+            "property_of_gene", 
+            columns= 5,
+        ).resolve_scale(
+            x='independent'        
+        )
         _ = alt.data_transformers.disable_max_rows()
         os.makedirs(os.path.join(save_path, genes_considered_as), exist_ok=True)
         try:
             chart.save(os.path.join(save_path, genes_considered_as, f"predictability_vs_{t}.svg"), method = "selenium")
         except Exception as e:
+            chart.save(os.path.join(save_path, genes_considered_as, f"predictability_vs_{t}.html"))
             print(f"Exception when saving predictability versus {t}: {repr(e)}. Is the chart empty?")
 
     # How many genes are we just predicting a constant for?
@@ -218,7 +256,7 @@ def studyPredictableGenes(evaluationPerTarget, train_data, save_path, factor_var
                     outdir=os.path.join(save_path, genes_considered_as, "enrichr_on_best", str(condition), f"{gene_sets}"), 
                     format='svg',
                 )
-            except (ValueError, ConnectionError) as e:
+            except Exception as e:
                 print(f"While running enrichr via gseapy, encountered error {repr(e)}.")
                 pass
     return evaluationPerTarget
@@ -377,6 +415,8 @@ def evaluate_across_perts(expression, predictedExpression, baseline, classifier=
         elap = "expression_level_after_perturbation"
         predictedExpression.obs[elap] = pd.to_numeric(predictedExpression.obs[elap], errors='coerce')
         expression.obs[elap] = pd.to_numeric(expression.obs[elap], errors='coerce')
+        expression.obs[         "perturbation"] = expression.obs[         "perturbation"].astype(str)
+        predictedExpression.obs["perturbation"] = predictedExpression.obs["perturbation"].astype(str)
         if not all(
             expression.obs.loc         [:, ["perturbation", elap]].fillna(0) == 
             predictedExpression.obs.loc[:, ["perturbation", elap]].fillna(0)
@@ -473,11 +513,14 @@ def evaluateOnePrediction(
             ) + diagonal
             alt.data_transformers.disable_max_rows()
             pd.DataFrame().to_csv(os.path.join(perturbation_plot_path, f"{pert}.txt"))
-            scatterplot.save(os.path.join(perturbation_plot_path, f"{pert}.svg"), method = "selenium")
-            if is_easiest:
-                scatterplot.save(os.path.join(perturbation_plot_path, f"_easiest({pert}).svg"), method = "selenium")
-            if is_hardest:
-                scatterplot.save(os.path.join(perturbation_plot_path, f"_hardest({pert}).svg"), method = "selenium")
+            try:
+                scatterplot.save(os.path.join(perturbation_plot_path, f"{pert}.svg"), method = "selenium")
+                if is_easiest:
+                    scatterplot.save(os.path.join(perturbation_plot_path, f"_easiest({pert}).svg"), method = "selenium")
+                if is_hardest:
+                    scatterplot.save(os.path.join(perturbation_plot_path, f"_hardest({pert}).svg"), method = "selenium")
+            except Exception as e:
+                print(f"Altair saver failed with error {repr(e)}")
     metrics["perturbation"] = metrics.index
     return metrics, metrics_per_target
     
