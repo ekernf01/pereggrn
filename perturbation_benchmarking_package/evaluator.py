@@ -80,7 +80,7 @@ def makeMainPlots(
                 columns=int(np.ceil(np.sqrt(len(evaluationPerPert[facet_by].unique())))), 
             )
         try:
-            vlnplot[metric].save(f'{outputs}/{metric}.svg', method = "selenium")
+            vlnplot[metric].save(f'{outputs}/{metric}.svg')
         except Exception as e:
             print(f"Got error {repr(e)} during svg saving; trying instead with html and interactive html.")
             vlnplot[metric].save(f'{outputs}/{metric}.html')    
@@ -216,7 +216,7 @@ def studyPredictableGenes(evaluationPerTarget, train_data, test_data, save_path,
         _ = alt.data_transformers.disable_max_rows()
         os.makedirs(os.path.join(save_path, genes_considered_as), exist_ok=True)
         try:
-            chart.save(os.path.join(save_path, genes_considered_as, f"predictability_vs_{t}.svg"), method = "selenium")
+            chart.save(os.path.join(save_path, genes_considered_as, f"predictability_vs_{t}.svg"))
         except Exception as e:
             chart.save(os.path.join(save_path, genes_considered_as, f"predictability_vs_{t}.html"))
             print(f"Exception when saving predictability versus {t}: {repr(e)}. Is the chart empty?")
@@ -237,7 +237,7 @@ def studyPredictableGenes(evaluationPerTarget, train_data, test_data, save_path,
             _ = alt.data_transformers.disable_max_rows()
             os.makedirs(os.path.join(save_path, genes_considered_as, "variety_in_predictions"), exist_ok=True)
             try:
-                chart.save( os.path.join(save_path, genes_considered_as, "variety_in_predictions", f"{condition}.svg"), method = "selenium")
+                chart.save( os.path.join(save_path, genes_considered_as, "variety_in_predictions", f"{condition}.svg"))
             except Exception as e:
                 print(f"Saving svg failed with error {repr(e)}. Trying html, which may produce BIG-ASS files.")
                 chart.save( os.path.join(save_path, genes_considered_as, "variety_in_predictions", f"{condition}.html"))
@@ -295,7 +295,7 @@ def plotOneTargetGene(gene, outputs, experiments, factor_varied, train_data, hel
     ).facet(
         facet = factor_varied, 
         columns=3,
-    ).save(os.path.join(outputs, gene + ".svg"), method = "selenium")
+    ).save(os.path.join(outputs, gene + ".svg"))
     return   
 
 def postprocessEvaluations(evaluations, experiments):
@@ -514,11 +514,11 @@ def evaluateOnePrediction(
             alt.data_transformers.disable_max_rows()
             pd.DataFrame().to_csv(os.path.join(perturbation_plot_path, f"{pert}.txt"))
             try:
-                scatterplot.save(os.path.join(perturbation_plot_path, f"{pert}.svg"), method = "selenium")
+                scatterplot.save(os.path.join(perturbation_plot_path, f"{pert}.svg"))
                 if is_easiest:
-                    scatterplot.save(os.path.join(perturbation_plot_path, f"_easiest({pert}).svg"), method = "selenium")
+                    scatterplot.save(os.path.join(perturbation_plot_path, f"_easiest({pert}).svg"))
                 if is_hardest:
-                    scatterplot.save(os.path.join(perturbation_plot_path, f"_hardest({pert}).svg"), method = "selenium")
+                    scatterplot.save(os.path.join(perturbation_plot_path, f"_hardest({pert}).svg"))
             except Exception as e:
                 print(f"Altair saver failed with error {repr(e)}")
     metrics["perturbation"] = metrics.index
