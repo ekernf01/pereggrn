@@ -86,30 +86,33 @@ def makeMainPlots(
             vlnplot[metric].save(f'{outputs}/{metric}.html')    
     return vlnplot
 
-def addGeneMetadata(df, adata, adata_test):
-    # Measures derived from the test data, e.g. effect size
-    perturbation_characteristics = [
-       'fraction_missing',
-       'logFC', 
-       'spearmanCorr', 
-       'pearsonCorr', 
-       'logFCNorm2',
-    ]
-    perturbation_characteristics_available = []
-    for x in perturbation_characteristics:
-        if x not in df.columns: 
-            if x in adata_test.obs.columns:
-                perturbation_characteristics_available.append(x)
-                df = pd.merge(
-                    adata_test.obs.loc[:,[x]],
-                    df.copy(),
-                    how = "outer", # Will deal with missing info later
-                    left_index=True, 
-                    right_on="gene")
-        else:
-            perturbation_characteristics_available.append(x)
-    perturbation_characteristics = perturbation_characteristics_available
+def addGeneMetadata(df, adata, adata_test, genes_considered_as):
     
+    # Measures derived from the test data, e.g. effect size
+    if genes_considered_as == "perturbation":
+        perturbation_characteristics = [
+        'fraction_missing',
+        'logFC',
+        'spearmanCorr',
+        'pearsonCorr',
+        'logFCNorm2',
+        ]
+        perturbation_characteristics_available = []
+        for x in perturbation_characteristics:
+            if x not in df.columns: 
+                if x in adata_test.obs.columns:
+                    perturbation_characteristics_available.append(x)
+                    df = pd.merge(
+                        adata_test.obs.loc[:,["perturbation", x]],
+                        df.copy(),
+                        how = "outer", # Will deal with missing info later
+                        left_on="perturbation", 
+                        right_on="gene")
+            else:
+                perturbation_characteristics_available.append(x)
+        perturbation_characteristics = perturbation_characteristics_available
+        
+
     # Measures derived from the training data, e.g. overdispersion
     expression_characteristics = [
         'highly_variable', 'highly_variable_rank', 'means',
@@ -172,16 +175,18 @@ def addGeneMetadata(df, adata, adata_test):
         df.reset_index(inplace=True)
     except:
         pass
-    return df, {
-        "perturbation_characteristics": perturbation_characteristics,
+    types_of_gene_data = {
         "evolutionary_characteristics":evolutionary_characteristics,
         "expression_characteristics": expression_characteristics, 
         "degree_characteristics": degree_characteristics,
     }
+    if genes_considered_as == "perturbation":
+        types_of_gene_data["perturbation_characteristics"] = perturbation_characteristics
+    return df, types_of_gene_data
 
 def studyPredictableGenes(evaluationPerTarget, train_data, test_data, save_path, factor_varied, genes_considered_as):
     # Plot various factors against our per-gene measure of predictability 
-    evaluationPerTarget, types_of_gene_data = addGeneMetadata(evaluationPerTarget, train_data, test_data)
+    evaluationPerTarget, types_of_gene_data = addGeneMetadata(evaluationPerTarget, train_data, test_data, genes_considered_as)
     types_of_gene_data["out-degree"] = [s for s in types_of_gene_data["degree_characteristics"] if "out-degree" in s]
     types_of_gene_data["in-degree"]  = [s for s in types_of_gene_data["degree_characteristics"] if "in-degree" in s]
     for t in types_of_gene_data.keys():
@@ -198,6 +203,10 @@ def studyPredictableGenes(evaluationPerTarget, train_data, test_data, save_path,
             ignore_index=True)
         long_data["value"] = [float(x) for x in long_data["value"]]
         long_data = long_data.loc[long_data["value"].notnull(), :]
+        long_data = long_data.loc[long_data["mae_benefit"].notnull(), :]
+        if long_data.shape[0]==0:
+            print(f"No genes have info on {t}. Skipping.")
+            continue
         long_data["value_binned"] = long_data.groupby(["property_of_gene", factor_varied])[["value"]].transform(lambda x: pd.cut(rank(x), bins=5))
         long_data = long_data.groupby(["property_of_gene", factor_varied, "value_binned"]).agg('median').reset_index()
         del long_data["value_binned"]
@@ -259,6 +268,7 @@ def studyPredictableGenes(evaluationPerTarget, train_data, test_data, save_path,
             except Exception as e:
                 print(f"While running enrichr via gseapy, encountered error {repr(e)}.")
                 pass
+    evaluationPerTarget = evaluationPerTarget.loc[evaluationPerTarget["gene"].notnull(), :]
     return evaluationPerTarget
 
 def plotOneTargetGene(gene, outputs, experiments, factor_varied, train_data, heldout_data, fitted_values, predictions):
@@ -271,12 +281,12 @@ def plotOneTargetGene(gene, outputs, experiments, factor_varied, train_data, hel
             )],
             "experiment": e,
             "observed": np.concatenate([
-                train_data[e][:,gene].X.squeeze(), 
-                heldout_data[e][:,gene].X.squeeze(), 
+                safe_squeeze(train_data[e][:,gene].X), 
+                safe_squeeze(heldout_data[e][:,gene].X), 
             ]), 
             "predicted": np.concatenate([
-                fitted_values[e][:,gene].X.squeeze(), 
-                predictions[e][:,gene].X.squeeze(), 
+                safe_squeeze(fitted_values[e][:,gene].X), 
+                safe_squeeze(predictions[e][:,gene].X), 
             ]), 
             "is_trainset": np.concatenate([
                 np.ones (fitted_values[e][:,gene].shape[0]), 
@@ -374,9 +384,16 @@ def evaluateCausalModel(
     evaluationPerTarget = postprocessEvaluations(evaluationPerTarget, experiments)
     return evaluationPerPert, evaluationPerTarget
 
+def safe_squeeze(X):
+    try:
+        X = X.toarray().squeeze()
+    except:
+        X = X.squeeze()
+    return X
+
 def evaluate_per_target(i, target, expression, predictedExpression):
-    observed  = expression[:, i].squeeze()
-    predicted = predictedExpression[:, i].squeeze()
+    observed  = safe_squeeze(expression[:, i])
+    predicted = safe_squeeze(predictedExpression[:, i])
     std_dev = np.std(predicted)
     mae = np.abs(observed - predicted).sum().copy()
     mse = np.linalg.norm(observed - predicted) ** 2
@@ -390,8 +407,8 @@ def evaluate_across_targets(expression, predictedExpression):
     return metrics_per_target
 
 def evaluate_per_pert(i, pert, expression, predictedExpression, baseline, classifier=None):
-    observed = expression[i, :].squeeze()
-    predicted = predictedExpression[i, :].squeeze()
+    predicted = safe_squeeze(predictedExpression[i, :])
+    observed = safe_squeeze(expression[i, :])
     def is_constant(x):
         return np.std(x) < 1e-12
     if type(predicted) is float and np.isnan(predicted) or is_constant(predicted - baseline) or is_constant(observed - baseline):

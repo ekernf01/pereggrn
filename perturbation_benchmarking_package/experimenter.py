@@ -553,3 +553,16 @@ def safe_save_adata(adata, h5ad):
     except KeyError as e:
         pass
     adata.write_h5ad( h5ad )
+
+def load_successful_experiments(outputs):
+    experiments =     pd.read_csv( os.path.join(outputs, "experiments.csv") )
+    def has_predictions(i):
+        print(f"Checking for {i}", flush=True)
+        try:
+            X = sc.read_h5ad( os.path.join(outputs, "predictions",   str(i) + ".h5ad" ) )
+            del X
+            return True
+        except:
+            print(f"Skipping {i}: predictions could not be read.", flush = True)
+            return False
+    experiments = experiments.loc[[i for i in experiments.index if has_predictions(i)], :]
