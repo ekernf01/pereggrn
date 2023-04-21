@@ -566,3 +566,4 @@ def load_successful_experiments(outputs):
             print(f"Skipping {i}: predictions could not be read.", flush = True)
             return False
     experiments = experiments.loc[[i for i in experiments.index if has_predictions(i)], :]
+    return experiments
