@@ -49,6 +49,7 @@ def validate_metadata(
         "regression_method": "RidgeCV",
         "time_strategy": "steady_state",
         "starting_expression": "control",
+        "control_subtype": None,
         "kwargs": None,
         "data_split_seed": 0,
         "baseline_condition": 0,
