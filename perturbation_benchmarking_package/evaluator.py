@@ -21,7 +21,10 @@ def makeMainPlots(
     factor_varied:str, 
     facet_by: str = None, 
     color_by: str = None, 
-    metrics = ['spearman', 'mse', 'mae', 'mae_benefit']
+    metrics = [
+        'spearman', 'mse', 'mae', 'mae_benefit',
+        "mse_top_20", "mse_top_100", "mse_top_200",
+    ]
     ):
     """Redo the main plots summarizing an experiment.
     Args:
@@ -82,7 +85,7 @@ def makeMainPlots(
         try:
             vlnplot[metric].save(f'{outputs}/{metric}.svg')
         except Exception as e:
-            print(f"Got error {repr(e)} during svg saving; trying instead with html and interactive html.")
+            print(f"Got error {repr(e)} during svg saving; trying instead with html and interactive html.", flush = True)
             vlnplot[metric].save(f'{outputs}/{metric}.html')    
     return vlnplot
 
@@ -423,9 +426,18 @@ def evaluate_per_pert(i, pert, expression, predictedExpression, baseline, classi
             class_observed = classifier.predict(np.reshape(observed, (1, -1)))[0]
             class_predicted = classifier.predict(np.reshape(predicted, (1, -1)))[0]
             cell_fate_correct = 1.0 * (class_observed == class_predicted)
-        return pert, [spearman, spearmanp, cell_fate_correct, mse, mae, proportion_correct_direction]
+        # Some GEARS metrics from their extended data figure 1
+        def mse_top_n(n, p=predicted, o=observed):
+            top_n = rank(-np.abs(o)) <= n
+            return np.linalg.norm(o[top_n] - p[top_n]) ** 2
+        mse_top_20  = mse_top_n(n=20)
+        mse_top_100 = mse_top_n(n=100)
+        mse_top_200 = mse_top_n(n=200)
+        return pert, [spearman, spearmanp, cell_fate_correct, 
+                      mse_top_20, mse_top_100, mse_top_200,
+                      mse, mae, proportion_correct_direction]
 
-def evaluate_across_perts(expression, predictedExpression, baseline, classifier=None, do_careful_checks=False):
+def evaluate_across_perts(expression, predictedExpression, baseline, experiment_name, classifier=None, do_careful_checks=False):
     perts = predictedExpression.obs.index
     predictedExpression = predictedExpression.to_memory()
     if do_careful_checks:
@@ -444,9 +456,12 @@ def evaluate_across_perts(expression, predictedExpression, baseline, classifier=
         for i,pert in enumerate(perts)
     )
     metrics_per_pert = pd.DataFrame(results, columns=["pert", "metrics"]).set_index("pert")
-    metrics_per_pert = pd.DataFrame(metrics_per_pert["metrics"].tolist(), index=metrics_per_pert.index, columns=["spearman", "spearmanp", "cell_fate_correct", "mse", "mae", "proportion_correct_direction"])
+    metrics_per_pert = pd.DataFrame(metrics_per_pert["metrics"].tolist(), index=metrics_per_pert.index, columns=[
+        "spearman", "spearmanp", "cell_fate_correct", 
+        "mse_top_20", "mse_top_100", "mse_top_200",
+        "mse", "mae", "proportion_correct_direction"
+    ])
     return metrics_per_pert
-
 
 def evaluateOnePrediction(
     expression: anndata.AnnData, 
@@ -482,7 +497,7 @@ def evaluateOnePrediction(
     '''
     "log fold change using Spearman correlation and (optionally) cell fate classification."""
     if not expression.X.shape == predictedExpression.X.shape:
-        raise ValueError(f"expression and predictedExpression must have the same shape on experiment {experiment_name}.")
+        raise ValueError(f"expression shape is {expression.X.shape} and predictedExpression shape is {predictedExpression.X.shape} on {experiment_name}.")
     if not expression.X.shape[1] == baseline.X.shape[1]:
         raise ValueError(f"expression and baseline must have the same number of genes on experiment {experiment_name}.")
     if not len(predictedExpression.obs_names) == len(expression.obs_names):
@@ -490,9 +505,8 @@ def evaluateOnePrediction(
     if not all(predictedExpression.obs_names == expression.obs_names):
         raise ValueError(f"expression and predictedExpression must have the same indices on experiment {experiment_name}.")
     baseline = baseline.X.mean(axis=0).squeeze()
-    metrics = pd.DataFrame(index = predictedExpression.obs.index, columns = ["spearman", "spearmanp", "cell_fate_correct", "mse"])
     metrics_per_target = evaluate_across_targets(expression, predictedExpression)
-    metrics = evaluate_across_perts(expression, predictedExpression, baseline, classifier, do_careful_checks)
+    metrics = evaluate_across_perts(expression, predictedExpression, baseline, experiment_name, classifier, do_careful_checks)
 
     print("\nMaking some example plots")
     metrics["spearman"] = metrics["spearman"].astype(float)
