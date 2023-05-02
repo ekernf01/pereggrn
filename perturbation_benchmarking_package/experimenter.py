@@ -95,8 +95,22 @@ def validate_metadata(
         "regression_method",
         "time_strategy",
     )
+    allowed_keys = desired_keys + (
+        "refers_to" ,
+        "only_tfs_are_regulators",
+        "predict_self" ,
+        "num_genes",
+        "baseline_condition",
+        "data_split_seed",
+        "starting_expression",
+        "control_subtype",
+        "kwargs",
+        "skip_bad_runs",
+    )
     missing = [k for k in desired_keys if k not in metadata.keys()]
+    extra = [k for k in metadata.keys() if k not in allowed_keys]
     assert len(missing)==0, f"Metadata is missing some required keys: {' '.join(missing)}"
+    assert len(extra)==0,   f"Metadata has some unwanted keys: {' '.join(extra)}"
     
     # Check a few of the values
     assert experiment_name == metadata["unique_id"], "Experiment is labeled right"
