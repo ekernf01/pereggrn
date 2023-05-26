@@ -214,6 +214,7 @@ def do_one_run(
         predict_self                         = experiments.loc[i,"predict_self"],
         projection                           = "none",  
         time_strategy                        = experiments.loc[i,"time_strategy"],
+        test_set_genes                       = test_data.var_names,
         kwargs                               = metadata["kwargs"],
     )
     return grn
