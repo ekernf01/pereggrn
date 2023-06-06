@@ -47,7 +47,6 @@ def validate_metadata(
         "desired_heldout_fraction": 0.5,
         "type_of_split": "interventional",
         "regression_method": "RidgeCV",
-        "time_strategy": "steady_state",
         "starting_expression": "control",
         "control_subtype": None,
         "kwargs": None,
@@ -55,7 +54,7 @@ def validate_metadata(
         "baseline_condition": 0,
         "num_genes": 10000,
         "predict_self": False,
-        "only_tfs_are_regulators": False,
+        'eligible_regulators': "all",
         "merge_replicates": False,
         "network_datasets":{"dense":{}},
         "skip_bad_runs": True,
@@ -93,11 +92,10 @@ def validate_metadata(
         "pruning_strategy",
         "network_prior",
         "regression_method",
-        "time_strategy",
     )
     allowed_keys = desired_keys + (
         "refers_to" ,
-        "only_tfs_are_regulators",
+        "eligible_regulators",
         "predict_self" ,
         "num_genes",
         "baseline_condition",
@@ -142,7 +140,7 @@ def lay_out_runs(
 
     """
     metadata = metadata.copy() # We're gonna mangle it. :)
-    # This will fuck up the cartesian product below.
+    # This is a dict containing who knows what and it will screw up the cartesian product below if we leave it in.
     del metadata["kwargs"]
     # See experimenter.get_networks() to see how the metadata.json turns into this
     metadata["network_datasets"] = list(networks.keys())
@@ -196,12 +194,24 @@ def do_one_run(
     Returns:
         anndata.AnnData: Predicted expression
     """
-    if human_tfs is None and experiments.loc[i,'only_tfs_are_regulators']:
-        raise ValueError("If you want to restrict to only TF's as regulators, provide a list to human_tfs.")
+    if experiments.loc[i,'eligible_regulators'] == "human_tfs":
+        if human_tfs is None:
+            raise ValueError("If you want to restrict to only TF's as regulators, provide a list to human_tfs.")
+        eligible_regulators = human_tfs 
+    elif experiments.loc[i,'eligible_regulators'] == "all":
+        eligible_regulators = None
+    elif experiments.loc[i,'eligible_regulators'] == "perturbed_genes":
+        eligible_regulators = set.union(
+            set(train_data.uns["perturbed_and_measured_genes"]),
+            set( test_data.uns["perturbed_and_measured_genes"])
+        )
+    else:
+        raise ValueError("'eligible_regulators' must be 'human_tfs' or 'perturbed_genes' or 'all'")
+    train_data.obs["is_control"] = train_data.obs["is_control"].astype(bool)
     grn = ggrn.GRN(
         train=train_data, 
         network                     = networks[experiments.loc[i,'network_datasets']],
-        eligible_regulators =     human_tfs if experiments.loc[i,'only_tfs_are_regulators'] else None
+        eligible_regulators =     eligible_regulators
     )
     grn.extract_tf_activity(method = "tf_rna")
     grn.fit(
@@ -212,9 +222,6 @@ def do_one_run(
         pruning_strategy                     = experiments.loc[i,"pruning_strategy"],
         pruning_parameter                    = experiments.loc[i,"pruning_parameter"],
         predict_self                         = experiments.loc[i,"predict_self"],
-        projection                           = "none",  
-        time_strategy                        = experiments.loc[i,"time_strategy"],
-        test_set_genes                       = test_data.var_names,
         kwargs                               = metadata["kwargs"],
     )
     return grn
