@@ -380,7 +380,7 @@ def splitDataWrapper(
     perturbed_expression_data,
     desired_heldout_fraction, 
     networks: dict, 
-    network_behavior: str = "union", 
+    allowed_regulators_vs_network_regulators: str = "all", 
     type_of_split: str = "interventional" ,
     data_split_seed = None,
 ):
@@ -392,13 +392,20 @@ def splitDataWrapper(
     """
     if data_split_seed is None:
         data_split_seed = 0
-    if network_behavior is None or network_behavior == "union":
-        allowedRegulators = perturbed_expression_data.var_names
-        if any([k not in {"dense", "empty"} for k in networks.keys()]):
-            network_regulators = set.union(*[networks[key].get_all_regulators() for key in networks])
-            allowedRegulators = allowedRegulators.intersection(network_regulators)
+
+    # Allow test set to only have e.g. regulators present in at least one network
+    allowedRegulators = perturbed_expression_data.var_names
+    if allowed_regulators_vs_network_regulators == "all":
+        pass
+    elif allowed_regulators_vs_network_regulators == "union":
+        network_regulators = set.union(*[networks[key].get_all_regulators() for key in networks])
+        allowedRegulators = allowedRegulators.intersection(network_regulators)
+    elif allowed_regulators_vs_network_regulators == "intersection":
+        network_regulators = set.intersection(*[networks[key].get_all_regulators() for key in networks])
+        allowedRegulators = allowedRegulators.intersection(network_regulators)
     else:
-        raise ValueError(f"network_behavior currently only allows 'union'; got {network_behavior}")
+        raise ValueError(f"allowedRegulators currently only allows 'union' or 'all' or 'intersection'; got {allowedRegulators}")
+    
     perturbed_expression_data_train, perturbed_expression_data_heldout = \
         splitData(
             perturbed_expression_data, 
