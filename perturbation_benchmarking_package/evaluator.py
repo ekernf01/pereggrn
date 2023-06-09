@@ -92,7 +92,7 @@ def makeMainPlots(
 def addGeneMetadata(df, adata, adata_test, genes_considered_as):
     
     # Measures derived from the test data, e.g. effect size
-    if genes_considered_as == "perturbation":
+    if genes_considered_as == "perturbations":
         perturbation_characteristics = [
         'fraction_missing',
         'logFC',
@@ -105,6 +105,8 @@ def addGeneMetadata(df, adata, adata_test, genes_considered_as):
             if x not in df.columns: 
                 if x in adata_test.obs.columns:
                     perturbation_characteristics_available.append(x)
+                    # If this column is duplicated, it causes problems: pert_x pert_y etc. 
+                    df = df[[c for c in df.columns if c != "perturbation"]]
                     df = pd.merge(
                         adata_test.obs.loc[:,["perturbation", x]],
                         df.copy(),
@@ -126,10 +128,9 @@ def addGeneMetadata(df, adata, adata_test, genes_considered_as):
         df = pd.merge(
             adata.var[expression_characteristics],
             df.copy(),
-            how = "outer", # Will deal with missing info later
+            how = "outer", # This yields missing values. Will deal with that later
             left_index=True, 
             right_on="gene")
-
     # Proteoform diversity information is not yet used because it would be hard to summarize this into a numeric measure of complexity.
     # But this code may be useful if we aim to continue that work later on.
     proteoform_diversity = pd.read_csv("../accessory_data/uniprot-compressed_true_download_true_fields_accession_2Cid_2Cprotei-2023.02.02-15.27.12.44.tsv.gz", sep = "\t")
@@ -151,7 +152,7 @@ def addGeneMetadata(df, adata, adata_test, genes_considered_as):
         df = pd.merge(
             evolutionary_constraint,
             df.copy(),
-            how = "outer", # Will deal with missing info later
+            how = "outer", # This yields missing values. Will deal with that later
             left_on="gene", 
             right_on="gene")
     
@@ -171,7 +172,7 @@ def addGeneMetadata(df, adata, adata_test, genes_considered_as):
         df = pd.merge(
             degree,
             df.copy(),
-            how = "outer", # Will deal with missing info later
+            how = "outer", # This yields missing values. Will deal with that later
             left_on="gene", 
             right_on="gene")
     try:
@@ -183,8 +184,13 @@ def addGeneMetadata(df, adata, adata_test, genes_considered_as):
         "expression_characteristics": expression_characteristics, 
         "degree_characteristics": degree_characteristics,
     }
-    if genes_considered_as == "perturbation":
+    if genes_considered_as == "perturbations":
         types_of_gene_data["perturbation_characteristics"] = perturbation_characteristics
+    
+    # Remove missing values from outer joins.
+    # These are genes where we have various annotations, but they are not actually
+    # perturbed or not actually measured on the test set.
+    df = df.loc[df["mae_benefit"].notnull(), :]
     return df, types_of_gene_data
 
 def studyPredictableGenes(evaluationPerTarget, train_data, test_data, save_path, factor_varied, genes_considered_as):
