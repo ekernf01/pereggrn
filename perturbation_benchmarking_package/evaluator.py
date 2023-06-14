@@ -334,8 +334,10 @@ def postprocessEvaluations(evaluations, experiments):
             )
     )
     evaluations["mae_benefit"] = evaluations["mae_baseline"] - evaluations["mae"]
+    # Fix a bug with parquet not handling mixed-type columns
+    evaluations = evaluations.astype({'mae': float, 'mae_baseline': float, 'mae_benefit': float})
+
     evaluations = evaluations.sort_values("mae_benefit", ascending=False)
-    evaluations["model_beats_mean_on_this_gene"] = evaluations["mae_benefit"]>0
     # Sometimes these are processed by the same code downstream and it's convenient to have a "gene" column.
     try:
         evaluations["gene"] = evaluations["target"]
@@ -346,8 +348,6 @@ def postprocessEvaluations(evaluations, experiments):
     except KeyError:
         pass
 
-    # Fix a bug with parquet not handling mixed-type columns
-    evaluations = evaluations.astype({'mae': float, 'mae_baseline': float, 'mae_benefit': float})
     return evaluations
 
 def evaluateCausalModel(
@@ -421,7 +421,7 @@ def evaluate_per_pert(i, pert, expression, predictedExpression, baseline, classi
     def is_constant(x):
         return np.std(x) < 1e-12
     if type(predicted) is float and np.isnan(predicted) or is_constant(predicted - baseline) or is_constant(observed - baseline):
-        return pert, [0, 1, np.nan, np.nan, np.nan, np.nan]
+        return pert, [0, 1, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan]
     else:
         spearman, spearmanp = [x for x in spearmanr(observed - baseline, predicted - baseline)]
         mse = np.linalg.norm(observed - predicted)**2

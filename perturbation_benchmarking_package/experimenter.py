@@ -12,6 +12,7 @@ import perturbation_benchmarking_package.evaluator as evaluator
 import ggrn.api as ggrn
 import load_networks
 import load_perturbations
+from collections import OrderedDict
 
 # Parse experiment metadata
 def validate_metadata(
@@ -19,7 +20,7 @@ def validate_metadata(
     permissive = False
 ):
     with open(os.path.join("experiments", experiment_name, "metadata.json")) as f:
-        metadata = json.load(f)
+        metadata = json.load(f, object_pairs_hook=OrderedDict)
     if (not permissive) and ("is_active" in metadata.keys()) and (not metadata["is_active"]):
         raise ValueError("This experiment is marked as inactive. If you really want to run it, edit its metadata.json.")
     print("\n\nRaw metadata for experiment " + experiment_name + ":\n")
