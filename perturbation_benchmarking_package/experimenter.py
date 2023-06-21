@@ -14,6 +14,65 @@ import load_networks
 import load_perturbations
 from collections import OrderedDict
 
+def get_required_keys():
+    return (
+        # Experiment info
+        "unique_id",
+        "nickname",
+        "readme",
+        "question",
+        "is_active",
+        "factor_varied",    
+        "color_by",
+        "facet_by",
+        # Data and preprocessing
+        "network_datasets",
+        "perturbation_dataset",
+        "merge_replicates",
+        "desired_heldout_fraction",
+        "type_of_split",
+        # Modeling decisions
+        "pruning_parameter", 
+        "pruning_strategy",
+        "network_prior",
+        "regression_method",
+    )
+
+def get_optional_keys():
+    return (
+        "refers_to" ,
+        "eligible_regulators",
+        "predict_self" ,
+        "num_genes",
+        "baseline_condition",
+        "data_split_seed",
+        "starting_expression",
+        "control_subtype",
+        "kwargs",
+        "skip_bad_runs",
+    )
+
+def get_default_metadata():
+    return {
+        "pruning_parameter": None, 
+        "pruning_strategy": "none",
+        "network_prior": "ignore",
+        "desired_heldout_fraction": 0.5,
+        "type_of_split": "interventional",
+        "regression_method": "RidgeCV",
+        "starting_expression": "control",
+        "control_subtype": None,
+        "kwargs": None,
+        "data_split_seed": 0,
+        "baseline_condition": 0,
+        "num_genes": 10000,
+        "predict_self": False,
+        'eligible_regulators': "all",
+        "merge_replicates": False,
+        "network_datasets":{"dense":{}},
+        "skip_bad_runs": True,
+    }
+
 # Parse experiment metadata
 def validate_metadata(
     experiment_name, 
@@ -41,25 +100,7 @@ def validate_metadata(
         metadata["refers_to"] = None
 
     # Set defaults (None often defers to downstream code)
-    defaults = {
-        "pruning_parameter": None, 
-        "pruning_strategy": "none",
-        "network_prior": "ignore",
-        "desired_heldout_fraction": 0.5,
-        "type_of_split": "interventional",
-        "regression_method": "RidgeCV",
-        "starting_expression": "control",
-        "control_subtype": None,
-        "kwargs": None,
-        "data_split_seed": 0,
-        "baseline_condition": 0,
-        "num_genes": 10000,
-        "predict_self": False,
-        'eligible_regulators': "all",
-        "merge_replicates": False,
-        "network_datasets":{"dense":{}},
-        "skip_bad_runs": True,
-    }
+    defaults = get_default_metadata()
     for k in defaults:
         if not k in metadata:
             metadata[k] = defaults[k]
@@ -72,41 +113,9 @@ def validate_metadata(
             metadata["network_datasets"][netName]["do_aggregate_subnets"] = False
     
     # Check all keys
-    desired_keys = (
-        # Experiment info
-        "unique_id",
-        "nickname",
-        "readme",
-        "question",
-        "is_active",
-        "factor_varied",    
-        "color_by",
-        "facet_by",
-        # Data and preprocessing
-        "network_datasets",
-        "perturbation_dataset",
-        "merge_replicates",
-        "desired_heldout_fraction",
-        "type_of_split",
-        # Modeling decisions
-        "pruning_parameter", 
-        "pruning_strategy",
-        "network_prior",
-        "regression_method",
-    )
-    allowed_keys = desired_keys + (
-        "refers_to" ,
-        "eligible_regulators",
-        "predict_self" ,
-        "num_genes",
-        "baseline_condition",
-        "data_split_seed",
-        "starting_expression",
-        "control_subtype",
-        "kwargs",
-        "skip_bad_runs",
-    )
-    missing = [k for k in desired_keys if k not in metadata.keys()]
+    required_keys = get_required_keys()
+    allowed_keys = required_keys + get_optional_keys()
+    missing = [k for k in required_keys if k not in metadata.keys()]
     extra = [k for k in metadata.keys() if k not in allowed_keys]
     assert len(missing)==0, f"Metadata is missing some required keys: {' '.join(missing)}"
     assert len(extra)==0,   f"Metadata has some unwanted keys: {' '.join(extra)}"
@@ -129,7 +138,7 @@ def lay_out_runs(
   networks: dict, 
   metadata: dict,
 ) -> pd.DataFrame:
-    """Lay out the specific runs done in this experiment.
+    """Lay out the specific training runs or conditions included in this experiment.
 
     Args:
     networks (dict): dict with string keys and LightNetwork values
@@ -302,7 +311,7 @@ def filter_genes(expression_quantified: anndata.AnnData, num_genes: int, outputs
             expression_quantified.var["highly_variable_rank"] < num_genes - n_targeted
         )[0]
     except:
-        raise Exception("num_genes must act like a number w.r.t. < operator; received {num_genes}.")
+        raise Exception(f"num_genes must act like a number w.r.t. < operator; received {num_genes}.")
     
     gene_indices = np.union1d(targeted_genes, variable_genes)
     gene_set = expression_quantified.var.index.values[gene_indices]
