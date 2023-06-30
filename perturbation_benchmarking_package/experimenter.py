@@ -36,6 +36,7 @@ def get_required_keys():
         "pruning_strategy",
         "network_prior",
         "regression_method",
+        "feature_extraction",
     )
 
 def get_optional_keys():
@@ -61,6 +62,7 @@ def get_default_metadata():
         "type_of_split": "interventional",
         "regression_method": "RidgeCV",
         "starting_expression": "control",
+        "feature_extraction": None,
         "control_subtype": None,
         "kwargs": None,
         "data_split_seed": 0,
@@ -220,10 +222,10 @@ def do_one_run(
     train_data.obs["is_control"] = train_data.obs["is_control"].astype(bool)
     grn = ggrn.GRN(
         train=train_data, 
-        network                     = networks[experiments.loc[i,'network_datasets']],
-        eligible_regulators =     eligible_regulators
+        network             = networks[experiments.loc[i,'network_datasets']],
+        eligible_regulators = eligible_regulators,
+        feature_extraction  = experiments.loc[i,"feature_extraction"],
     )
-    grn.extract_tf_activity(method = "tf_rna")
     grn.fit(
         method                               = experiments.loc[i,"regression_method"], 
         cell_type_labels                     = None,
@@ -236,7 +238,6 @@ def do_one_run(
     )
     return grn
 
-# TODO: move this to the network collection loader module?
 def get_subnets(netName:str, subnets:list, target_genes = None, do_aggregate_subnets = False) -> dict:
     """Get gene regulatory networks for an experiment.
 
