@@ -5,6 +5,7 @@ import yaml
 import gc
 import pandas as pd
 import numpy as np
+import scipy
 import anndata
 import scanpy as sc
 from itertools import product
@@ -37,6 +38,10 @@ def get_required_keys():
         "network_prior",
         "regression_method",
         "feature_extraction",
+        "low_dimensional_structure",
+        "low_dimensional_training",
+        "matching_method",
+        "prediction_timescale",
     )
 
 def get_optional_keys():
@@ -73,6 +78,10 @@ def get_default_metadata():
         "merge_replicates": False,
         "network_datasets":{"dense":{}},
         "skip_bad_runs": True,
+        "low_dimensional_structure": "none",
+        "low_dimensional_training": "svd",
+        "matching_method": "steady_state",
+        "prediction_timescale": 1
     }
 
 # Parse experiment metadata
@@ -234,6 +243,7 @@ def do_one_run(
         pruning_strategy                     = experiments.loc[i,"pruning_strategy"],
         pruning_parameter                    = experiments.loc[i,"pruning_parameter"],
         predict_self                         = experiments.loc[i,"predict_self"],
+        matching_method                      = experiments.loc[i,"matching_method"],
         kwargs                               = metadata["kwargs"],
     )
     return grn
@@ -585,7 +595,11 @@ def downsample(adata: anndata.AnnData, proportion: float, seed = None, proportio
     return adata
 
 def safe_save_adata(adata, h5ad):
-    # Sometimes AnnData has trouble saving pandas bool columns and sets, and they aren't needed here anyway.
+    # Sometimes AnnData has trouble saving pandas bool columns and sets and certain matrix types.
+    try:
+        adata.X = scipy.sparse.csr_matrix(adata.X)
+    except:
+        pass
     try:
         del adata.obs["is_control"] 
         del adata.obs["is_treatment"] 
