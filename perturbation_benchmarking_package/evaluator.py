@@ -89,8 +89,22 @@ def makeMainPlots(
             vlnplot[metric].save(f'{outputs}/{metric}.html')    
     return vlnplot
 
-def addGeneMetadata(df, adata, adata_test, genes_considered_as):
-    
+def addGeneMetadata(df: pd.DataFrame, 
+                    adata: anndata.AnnData,
+                    adata_test: anndata.AnnData,
+                    genes_considered_as: str) -> pd.DataFrame:
+    """Add metadata related to evo conservation and network connectivity
+
+
+    Args:
+        df (pd.DataFrame): Gene names and associated performance metrics
+        adata (anndata.AnnData): training expression data
+        adata_test (anndata.AnnData): test-set expression data
+        genes_considered_as (str): "targets" or "perturbations"
+
+    Returns:
+        pd.DataFrame: df with additional columns describing evo conservation and network connectivity
+    """
     # Measures derived from the test data, e.g. effect size
     if genes_considered_as == "perturbations":
         perturbation_characteristics = [
@@ -193,8 +207,25 @@ def addGeneMetadata(df, adata, adata_test, genes_considered_as):
     df = df.loc[df["mae_benefit"].notnull(), :]
     return df, types_of_gene_data
 
-def studyPredictableGenes(evaluationPerTarget, train_data, test_data, save_path, factor_varied, genes_considered_as):
-    # Plot various factors against our per-gene measure of predictability 
+def studyPredictableGenes(evaluationPerTarget: pd.DataFrame, 
+                          train_data: anndata.AnnData, 
+                          test_data: anndata.AnnData, 
+                          save_path: str, 
+                          factor_varied: str, 
+                          genes_considered_as: str) -> pd.DataFrame:
+    """Plot various factors against our per-gene measure of predictability 
+
+    Args:
+        evaluationPerTarget (pd.DataFrame):  Gene names and associated performance metrics
+        train_data (anndata.AnnData): training expression data
+        test_data (anndata.AnnData): test-set expression data
+        save_path (str): where to save the plots
+        factor_varied (str): what to use as the x axis in the plots
+        genes_considered_as (str): "targets" or "perturbations"
+
+    Returns:
+        pd.DataFrame: evaluation results
+    """
     evaluationPerTarget, types_of_gene_data = addGeneMetadata(evaluationPerTarget, train_data, test_data, genes_considered_as)
     types_of_gene_data["out-degree"] = [s for s in types_of_gene_data["degree_characteristics"] if "out-degree" in s]
     types_of_gene_data["in-degree"]  = [s for s in types_of_gene_data["degree_characteristics"] if "in-degree" in s]
@@ -280,8 +311,26 @@ def studyPredictableGenes(evaluationPerTarget, train_data, test_data, save_path,
     evaluationPerTarget = evaluationPerTarget.loc[evaluationPerTarget["gene"].notnull(), :]
     return evaluationPerTarget
 
-def plotOneTargetGene(gene, outputs, experiments, factor_varied, train_data, heldout_data, fitted_values, predictions):
-    """For one gene, plot predicted + observed values for train + test."""
+def plotOneTargetGene(gene: str, 
+                      outputs: str, 
+                      experiments: pd.DataFrame, 
+                      factor_varied: str,
+                      train_data: anndata.AnnData, 
+                      heldout_data: anndata.AnnData, 
+                      fitted_values: anndata.AnnData, 
+                      predictions: anndata.AnnData) -> None:
+    """For one gene, plot predicted + observed logfc for train + test.
+
+    Args:
+        gene (str): gene name (usually the HGNC symbol)
+        outputs (str): where to save the plots
+        experiments (pd.DataFrame): Metadata from experiments.csv
+        factor_varied (str): what to use as the x axis in the plot
+        train_data (anndata.AnnData): training expression
+        heldout_data (anndata.AnnData): test-set expression
+        fitted_values (anndata.AnnData): predictions about perturbations in the training set
+        predictions (anndata.AnnData): predictions about perturbations in the test set
+    """
     expression = {
         e:pd.DataFrame({
             "index": [i for i in range(
@@ -317,7 +366,17 @@ def plotOneTargetGene(gene, outputs, experiments, factor_varied, train_data, hel
     ).save(os.path.join(outputs, gene + ".svg"))
     return   
 
-def postprocessEvaluations(evaluations, experiments):
+def postprocessEvaluations(evaluations: pd.DataFrame, 
+                           experiments: pd.DataFrame)-> pd.DataFrame:
+    """Compare MAE for each observation to that of a a user-specified baseline method.
+
+    Args:
+        evaluations (pd.DataFrame): evaluation results for each test-set observation
+        experiments (pd.DataFrame): metadata from experiments.csv
+
+    Returns:
+        pd.DataFrame: evaluation results with additional columns 'mae_baseline' and 'mae_benefit'
+    """
     evaluations   = pd.concat(evaluations)
     evaluations   = evaluations.merge(experiments,   how = "left", right_index = True, left_on = "index")
     evaluations   = pd.DataFrame(evaluations.to_dict())
@@ -394,13 +453,33 @@ def evaluateCausalModel(
     return evaluationPerPert, evaluationPerTarget
 
 def safe_squeeze(X):
+    """Squeeze a matrix when you don't know if it's sparse-format or not.
+
+    Args:
+        X (np.matrix or scipy.sparse.csr_matrix): _description_
+
+    Returns:
+        np.array: 1-d version of the input
+    """
     try:
         X = X.toarray().squeeze()
     except:
         X = X.squeeze()
     return X
 
-def evaluate_per_target(i, target, expression, predictedExpression):
+def evaluate_per_target(i: int, target: str, expression, predictedExpression):
+    """Evaluate performance on a single target gene.
+
+    Args:
+        i (int): index of target gene to check
+        target (str): name of target gene
+        expression (np or scipy matrix): true expression or logfc
+        predictedExpression (np or scipy matrix): predicted expression or logfc
+
+    Returns:
+        tuple: target, std_dev, mae, mse where target is the gene name, std_dev is the standard deviation of the 
+            predictions (to check if they are constant), and mae and mse are mean absolute or squared error
+    """
     observed  = safe_squeeze(expression[:, i])
     predicted = safe_squeeze(predictedExpression[:, i])
     std_dev = np.std(predicted)
@@ -408,14 +487,41 @@ def evaluate_per_target(i, target, expression, predictedExpression):
     mse = np.linalg.norm(observed - predicted) ** 2
     return target, std_dev, mae, mse
 
-def evaluate_across_targets(expression, predictedExpression):
+def evaluate_across_targets(expression: anndata.AnnData, predictedExpression: anndata.AnnData) -> pd.DataFrame:
+    """Evaluate performance for each target gene.
+
+    Args:
+        expression (anndata.AnnData): actual expression or logfc
+        predictedExpression (anndata.AnnData): predicted expression or logfc
+
+    Returns:
+        pd.DataFrame: _description_
+    """
     targets = predictedExpression.var.index
     predictedExpression = predictedExpression.to_memory()
     results = Parallel(n_jobs=cpu_count()-1)(delayed(evaluate_per_target)(i, target, expression.X, predictedExpression.X) for i,target in enumerate(targets))
     metrics_per_target = pd.DataFrame(results, columns=["target", "standard_deviation", "mae", "mse"]).set_index("target")
     return metrics_per_target
 
-def evaluate_per_pert(i, pert, expression, predictedExpression, baseline, classifier=None):
+def evaluate_per_pert(i: int, 
+                      pert: str,
+                      expression: anndata.AnnData, 
+                      predictedExpression: anndata.AnnData,
+                      baseline: anndata.AnnData, 
+                      classifier=None) -> pd.DataFrame:
+    """Calculate evaluation metrics for one perturbations. 
+
+    Args:
+        i (int): index of the perturbation to be examined
+        pert (str): name(s) of perturbed gene(s)
+        expression (anndata.AnnData): actual expression, log1p-scale
+        predictedExpression (anndata.AnnData): predicted expression, log1p-scale
+        baseline (anndata.AnnData): baseline expression, log1p-scale
+        classifier (optional): Optional sklearn classifier to judge results by cell type label accuracy
+
+    Returns:
+        pd.DataFrame: Evaluation results for each perturbation
+    """
     predicted = safe_squeeze(predictedExpression[i, :])
     observed = safe_squeeze(expression[i, :])
     def is_constant(x):
@@ -440,10 +546,29 @@ def evaluate_per_pert(i, pert, expression, predictedExpression, baseline, classi
         mse_top_100 = mse_top_n(n=100)
         mse_top_200 = mse_top_n(n=200)
         return pert, [spearman, spearmanp, cell_fate_correct, 
-                      mse_top_20, mse_top_100, mse_top_200,
-                      mse, mae, proportion_correct_direction]
+                        mse_top_20, mse_top_100, mse_top_200,
+                        mse, mae, proportion_correct_direction]
 
-def evaluate_across_perts(expression, predictedExpression, baseline, experiment_name, classifier=None, do_careful_checks=False):
+def evaluate_across_perts(expression: anndata.AnnData, 
+                          predictedExpression: anndata.AnnData, 
+                          baseline: anndata.AnnData, 
+                          experiment_name: str, 
+                          classifier=None, 
+                          do_careful_checks: bool=False) -> pd.DataFrame:
+    """Evaluate performance for each perturbation.
+
+    Args:
+        expression (anndata.AnnData): actual expression, log1p-scale
+        predictedExpression (anndata.AnnData): predicted expression, log1p-scale
+        baseline (anndata.AnnData): baseline expression, log1p-scale
+        experiment_name (str): name of the experiment
+        classifier (optional): Optional sklearn classifier to judge results by cell type label instead of logfc
+        do_careful_checks (bool, optional): ensure that perturbation and dose match between observed
+            and predicted expression. Defaults to False.
+
+    Returns:
+        pd.DataFrame: _description_
+    """
     perts = predictedExpression.obs.index
     predictedExpression = predictedExpression.to_memory()
     if do_careful_checks:
@@ -523,8 +648,8 @@ def evaluateOnePrediction(
         is_hardest = hardest==pert
         is_easiest = easiest==pert
         if doPlots | is_hardest | is_easiest:
-            observed  = expression[         pert,:].X.squeeze()
-            predicted = predictedExpression[pert,:].X.squeeze()
+            observed  = safe_squeeze(expression[         pert,:].X)
+            predicted = safe_squeeze(predictedExpression[pert,:].X)
             os.makedirs(perturbation_plot_path, exist_ok = True)
             diagonal = alt.Chart(
                 pd.DataFrame({

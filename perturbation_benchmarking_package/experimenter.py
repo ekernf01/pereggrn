@@ -16,6 +16,12 @@ import load_perturbations
 from collections import OrderedDict
 
 def get_required_keys():
+    """Get all metadata keys that are required by downstream code. Some have 
+    default values so they are not necessarily required to be user-specified. 
+
+    Returns:
+        tuple: the keys
+    """
     return (
         # Experiment info
         "unique_id",
@@ -45,6 +51,8 @@ def get_required_keys():
     )
 
 def get_optional_keys():
+    """Get all metadata keys that are optional in downstream code.
+    """
     return (
         "refers_to" ,
         "eligible_regulators",
@@ -59,6 +67,11 @@ def get_optional_keys():
     )
 
 def get_default_metadata():
+    """Get default values wherever available for experimental parameters.
+
+    Returns:
+        dict: metadata parameter defaults
+    """
     return {
         "pruning_parameter": None, 
         "pruning_strategy": "none",
@@ -84,11 +97,19 @@ def get_default_metadata():
         "prediction_timescale": 1
     }
 
-# Parse experiment metadata
 def validate_metadata(
-    experiment_name, 
-    permissive = False
-):
+    experiment_name: str, 
+    permissive: bool = False
+) -> OrderedDict:
+    """Make sure the user-provided metadata is OK, and fill in missing info with defaults.
+
+    Args:
+        experiment_name (str): name of an Experiment (a folder in the experiments folder)
+        permissive (bool, optional): If true, allow running inactive experiments. Defaults to False.
+
+    Returns:
+        OrderedDict: Experiment metadata
+    """
     with open(os.path.join("experiments", experiment_name, "metadata.json")) as f:
         metadata = json.load(f, object_pairs_hook=OrderedDict)
     if (not permissive) and ("is_active" in metadata.keys()) and (not metadata["is_active"]):
@@ -244,6 +265,9 @@ def do_one_run(
         pruning_parameter                    = experiments.loc[i,"pruning_parameter"],
         predict_self                         = experiments.loc[i,"predict_self"],
         matching_method                      = experiments.loc[i,"matching_method"],
+        low_dimensional_structure            = experiments.loc[i,"low_dimensional_structure"],
+        low_dimensional_training             = experiments.loc[i,"low_dimensional_training"],
+        prediction_timescale                 = experiments.loc[i,"prediction_timescale"],
         kwargs                               = metadata["kwargs"],
     )
     return grn
@@ -332,7 +356,7 @@ def filter_genes(expression_quantified: anndata.AnnData, num_genes: int, outputs
 
 def set_up_data_networks_conditions(metadata, amount_to_do, outputs):
     """Set up the expression data, networks, and a sample sheet for this experiment."""
-    # Data, networks, experiment sheet in that order because reasons
+    # Data, networks, experiment sheet must be generated in that order because reasons
     perturbed_expression_data = load_perturbations.load_perturbation(metadata["perturbation_dataset"])
     try:
         perturbed_expression_data = perturbed_expression_data.to_memory()
@@ -398,18 +422,30 @@ def set_up_data_networks_conditions(metadata, amount_to_do, outputs):
     return perturbed_expression_data, networks, experiments
 
 def splitDataWrapper(
-    perturbed_expression_data,
-    desired_heldout_fraction, 
+    perturbed_expression_data: anndata.AnnData,
+    desired_heldout_fraction: float, 
     networks: dict, 
     allowed_regulators_vs_network_regulators: str = "all", 
     type_of_split: str = "interventional" ,
-    data_split_seed = None,
-):
+    data_split_seed: int = None,
+) -> tuple:
     """Split the data into train and test.
 
     Args:
         networks (dict): dict containing LightNetworks. Used to restrict what is allowed in the test set.
-        network_behavior (str): How to restrict what is allowed in the test set.
+        perturbed_expression_data (anndata.AnnData): expression dataset to split
+        desired_heldout_fraction (float): number between 0 and 1. fraction in test set.
+        allowed_regulators_vs_network_regulators (str, optional): "all", "union", or "intersection".
+            If "all", then anything can go in the test set.
+            If "union", then genes must be in at least one of the provided networks to go in the test set.
+            If "intersection", then genes must be in all of the provided networks to go in the test set.
+            Defaults to "all".
+        type_of_split (str, optional): "simple" (simple random split) or "interventional" (restrictions 
+            on test set such as no overlap with trainset). Defaults to "interventional".
+        data_split_seed (int, optional): random seed. Defaults to None.
+
+    Returns:
+        tuple of anndata objects: train, test
     """
     if data_split_seed is None:
         data_split_seed = 0
@@ -454,8 +490,8 @@ def splitData(adata, allowedRegulators, desired_heldout_fraction, type_of_split,
     they will provide useful info about attainable cell states and downstream causal effects. 
 
     For some collections of base networks, there are many factors ineligible for use as test data -- so many that 
-    we use all the eligible ones for test and the only ineligible ones for training. 
-    For other cases, such as dense base networks, we have more flexibility, so we send some perturbations to the 
+    we don't have enough for the test set. In this case we issue a warning and assign as many as possible to test. 
+    For other cases, we have more flexibility, so we send some perturbations to the 
     training set at random even if we would be able to use them in the test set.
 
     parameters:
@@ -595,14 +631,13 @@ def downsample(adata: anndata.AnnData, proportion: float, seed = None, proportio
     return adata
 
 def safe_save_adata(adata, h5ad):
-    # Sometimes AnnData has trouble saving pandas bool columns and sets and certain matrix types.
-    try:
-        adata.X = scipy.sparse.csr_matrix(adata.X)
-    except:
-        pass
+    """Clean up an AnnData for saving. AnnData has trouble saving sets, pandas columns that have dtype "object", and certain matrix types."""
+    adata.raw = None
+    adata.X = scipy.sparse.csr_matrix(adata.X)
     try:
         del adata.obs["is_control"] 
         del adata.obs["is_treatment"] 
+        adata.obs["expression_level_after_perturbation"] = adata.obs["expression_level_after_perturbation"].astype(str)
         adata.uns["perturbed_and_measured_genes"]     = list(adata.uns["perturbed_and_measured_genes"])
         adata.uns["perturbed_but_not_measured_genes"] = list(adata.uns["perturbed_but_not_measured_genes"])
     except KeyError as e:
@@ -610,6 +645,7 @@ def safe_save_adata(adata, h5ad):
     adata.write_h5ad( h5ad )
 
 def load_successful_experiments(outputs):
+    """Load a subset of experiments.csv for which predictions were successfully made."""
     experiments =     pd.read_csv( os.path.join(outputs, "experiments.csv") )
     def has_predictions(i):
         print(f"Checking for {i}", flush=True)
