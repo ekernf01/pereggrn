@@ -4,4 +4,4 @@ This repo contains software that generated our benchmarking results. For more in
 
 ### Installation
 
-pip install 'perturbation_benchmarking_package @ git+https://github.com/ekernf01/perturbation_benchmarking_package.git'
+`pip install 'perturbation_benchmarking_package @ git+https://github.com/ekernf01/perturbation_benchmarking_package.git'`
