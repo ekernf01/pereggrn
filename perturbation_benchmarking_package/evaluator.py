@@ -10,7 +10,10 @@ from scipy.stats import rankdata as rank
 import os 
 import sys
 import gc
-import gseapy
+try:
+    import gseapy
+except:
+    print("GSEAPY is unavailable; will skip some enrichment results.")
 import altair as alt
 from contextlib import redirect_stdout
 
@@ -42,9 +45,9 @@ def makeMainPlots(
         pass
     vlnplot = {}
     _ = alt.data_transformers.disable_max_rows()
-    group_mean_by = [factor_varied]
+    group_mean_by = [factor_varied + " "]
     if color_by is not None:
-        evaluationPerPert[factor_varied] = [str(a) + str(b) for a,b in zip(evaluationPerPert[factor_varied], evaluationPerPert[color_by])]
+        evaluationPerPert[factor_varied + " "] = [str(a) + str(b) for a,b in zip(evaluationPerPert[factor_varied], evaluationPerPert[color_by])]
     if facet_by is not None:
         group_mean_by.append(facet_by)
     for metric in metrics:
@@ -61,7 +64,7 @@ def makeMainPlots(
                 y=alt.Y(f'{metric}:Q'),
                 color=color_by + ':N',
                 x=alt.X(
-                    factor_varied + ':N'
+                    factor_varied + " " + ':N'
                 )
             ).properties(
                 width=400,
@@ -392,7 +395,7 @@ def postprocessEvaluations(evaluations: pd.DataFrame,
                 x.loc[x["condition"] == x["baseline_condition"], "mae"].values[0]
             )
     )
-    evaluations["mae_benefit"] = evaluations["mae_baseline"] - evaluations["mae"]
+    evaluations["mae_benefit"] = 100 * ( evaluations["mae_baseline"] - evaluations["mae"] ) / evaluations["mae_baseline"]
     # Fix a bug with parquet not handling mixed-type columns
     evaluations = evaluations.astype({'mae': float, 'mae_baseline': float, 'mae_benefit': float})
 

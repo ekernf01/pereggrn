@@ -565,6 +565,8 @@ def splitData(adata, allowedRegulators, desired_heldout_fraction, type_of_split,
         adata_heldout.uns["perturbed_and_measured_genes"]     = set(adata_heldout.uns["perturbed_and_measured_genes"]).intersection(testSetPerturbations)
         adata_train.uns[  "perturbed_but_not_measured_genes"] = set(adata_train.uns[  "perturbed_but_not_measured_genes"]).intersection(trainingSetPerturbations)
         adata_heldout.uns["perturbed_but_not_measured_genes"] = set(adata_heldout.uns["perturbed_but_not_measured_genes"]).intersection(testSetPerturbations)
+    elif type_of_split == "genetic_interaction":
+        raise NotImplementedError("Sorry, we are still working on this feature.")
     else:
         raise ValueError(f"`type_of_split` must be 'simple' or 'interventional'; got {type_of_split}.")
     return adata_train, adata_heldout
