@@ -638,9 +638,21 @@ def safe_save_adata(adata, h5ad):
     adata.X = scipy.sparse.csr_matrix(adata.X)
     try:
         del adata.obs["is_control"] 
+    except KeyError as e:
+        pass
+    try:
         del adata.obs["is_treatment"] 
+    except KeyError as e:
+        pass
+    try:
         adata.obs["expression_level_after_perturbation"] = adata.obs["expression_level_after_perturbation"].astype(str)
+    except KeyError as e:
+        pass
+    try:
         adata.uns["perturbed_and_measured_genes"]     = list(adata.uns["perturbed_and_measured_genes"])
+    except KeyError as e:
+        pass
+    try:
         adata.uns["perturbed_but_not_measured_genes"] = list(adata.uns["perturbed_but_not_measured_genes"])
     except KeyError as e:
         pass
