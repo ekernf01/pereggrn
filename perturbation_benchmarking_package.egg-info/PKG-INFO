@@ -1,0 +1,17 @@
+Metadata-Version: 2.1
+Name: perturbation-benchmarking-package
+Version: 0.0.1
+Summary: Systematic benchmarking of in silico genetic perturbations
+Home-page: https://github.com/ekernf01/perturbation_benchmarking_package
+Author: Eric Kernfeld
+Author-email: eric.kern13@gmail.com
+License: UNKNOWN
+Platform: UNKNOWN
+Requires-Python: >=3.7
+Description-Content-Type: text/markdown
+
+### Benchmarking and evaluation tools
+
+This repo contains software that generated our benchmarking results. For more info on this project, see the [benchmarking results repo](https://github.com/ekernf01/perturbation_benchmarking).
+
+
