@@ -45,9 +45,11 @@ def makeMainPlots(
         pass
     vlnplot = {}
     _ = alt.data_transformers.disable_max_rows()
-    group_mean_by = [factor_varied + " "]
     if color_by is not None:
         evaluationPerPert[factor_varied + " "] = [str(a) + str(b) for a,b in zip(evaluationPerPert[factor_varied], evaluationPerPert[color_by])]
+        group_mean_by = [factor_varied + " "]
+    else:
+        group_mean_by = [factor_varied]
     if facet_by is not None:
         group_mean_by.append(facet_by)
     for metric in metrics:
@@ -395,7 +397,7 @@ def postprocessEvaluations(evaluations: pd.DataFrame,
                 x.loc[x["condition"] == x["baseline_condition"], "mae"].values[0]
             )
     )
-    evaluations["mae_benefit"] = 100 * ( evaluations["mae_baseline"] - evaluations["mae"] ) / evaluations["mae_baseline"]
+    evaluations["mae_benefit"] = evaluations["mae_baseline"] - evaluations["mae"]
     # Fix a bug with parquet not handling mixed-type columns
     evaluations = evaluations.astype({'mae': float, 'mae_baseline': float, 'mae_benefit': float})
 

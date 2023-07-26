@@ -421,6 +421,31 @@ def set_up_data_networks_conditions(metadata, amount_to_do, outputs):
 
     return perturbed_expression_data, networks, experiments
 
+def doSplitsMatch(
+        experiment1: str, 
+        experiment2: str,
+        path_to_experiments = "experiments",
+        ) -> bool:
+    """Check whether the same examples and genes are used for the test-set in two experiments.
+
+    Args:
+        experiment1 (str): Name of an Experiment.
+        experiment2 (str): Name of another Experiment.
+
+    Returns:
+        bool: True iff the test-sets match.
+    """
+    t1 = sc.read_h5ad(os.path.join(path_to_experiments, experiment1, "outputs", "predictions", "0.h5ad"))
+    t2 = sc.read_h5ad(os.path.join(path_to_experiments, experiment2, "outputs", "predictions", "0.h5ad"))
+    if not t1.var_names.equals(t2.var_names):
+        return False
+    if not t1.obs_names.equals(t2.obs_names):
+        return False
+    for f in ["perturbation", "expression_level_after_perturbation"]:
+        if not all(t1.obs[f] == t2.obs[f]):
+            return False
+    return True
+
 def splitDataWrapper(
     perturbed_expression_data: anndata.AnnData,
     desired_heldout_fraction: float, 
