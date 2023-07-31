@@ -476,7 +476,7 @@ def splitDataWrapper(
         data_split_seed = 0
 
     # Allow test set to only have e.g. regulators present in at least one network
-    allowedRegulators = perturbed_expression_data.var_names
+    allowedRegulators = set(perturbed_expression_data.var_names)
     if allowed_regulators_vs_network_regulators == "all":
         pass
     elif allowed_regulators_vs_network_regulators == "union":
@@ -489,7 +489,7 @@ def splitDataWrapper(
         raise ValueError(f"allowedRegulators currently only allows 'union' or 'all' or 'intersection'; got {allowedRegulators}")
     
     perturbed_expression_data_train, perturbed_expression_data_heldout = \
-        splitData(
+        _splitDataHelper(
             perturbed_expression_data, 
             allowedRegulators, 
             desired_heldout_fraction = desired_heldout_fraction,
@@ -498,7 +498,7 @@ def splitDataWrapper(
         )
     return perturbed_expression_data_train, perturbed_expression_data_heldout
 
-def splitData(adata, allowedRegulators, desired_heldout_fraction, type_of_split, data_split_seed):
+def _splitDataHelper(adata, allowedRegulators, desired_heldout_fraction, type_of_split, data_split_seed):
     """Determine a train-test split satisfying constraints imposed by base networks and available data.
     
     A few factors complicate the training-test split. 
@@ -527,6 +527,7 @@ def splitData(adata, allowedRegulators, desired_heldout_fraction, type_of_split,
         If "simple", then we use a simple random split, and replicates of the same perturbation are allowed to go into different folds.
 
     """
+    assert type(allowedRegulators) is list or type(allowedRegulators) is set, "allowedRegulators must be a list or set of allowed genes"
     if data_split_seed is None:
         data_split_seed = 0
     # For a deterministic result when downsampling an iterable, setting a seed alone is not enough.
