@@ -62,8 +62,7 @@ def get_optional_keys():
         "data_split_seed",
         "starting_expression",
         "control_subtype",
-        "kwargs",
-        "skip_bad_runs",
+        "kwargs"
     )
 
 def get_default_metadata():
@@ -90,7 +89,6 @@ def get_default_metadata():
         'eligible_regulators': "all",
         "merge_replicates": False,
         "network_datasets":{"dense":{}},
-        "skip_bad_runs": True,
         "low_dimensional_structure": "none",
         "low_dimensional_training": "svd",
         "matching_method": "steady_state",
