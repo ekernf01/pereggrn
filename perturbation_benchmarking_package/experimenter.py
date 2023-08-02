@@ -577,9 +577,6 @@ def _splitDataHelper(adata, allowedRegulators, desired_heldout_fraction, type_of
             a = adata.obs_names, 
             size = round(adata.shape[0]*(1-desired_heldout_fraction)), 
         )
-        for o in adata.obs_names:
-            if adata.obs.loc[o, "is_control"]:
-                train_obs = np.append(train_obs, o)
         test_obs = [i for i in adata.obs_names if i not in train_obs]
         adata_train    = adata[train_obs,:]
         adata_heldout  = adata[test_obs,:]
