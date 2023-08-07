@@ -387,6 +387,7 @@ def filter_genes(expression_quantified: anndata.AnnData, num_genes: int, outputs
 def set_up_data_networks_conditions(metadata, amount_to_do, outputs):
     """Set up the expression data, networks, and a sample sheet for this experiment."""
     # Data, networks, experiment sheet must be generated in that order because reasons
+    print("Getting data...")
     perturbed_expression_data = load_perturbations.load_perturbation(metadata["perturbation_dataset"])
     try:
         perturbed_expression_data = perturbed_expression_data.to_memory()
@@ -399,7 +400,7 @@ def set_up_data_networks_conditions(metadata, amount_to_do, outputs):
     elap = "expression_level_after_perturbation"
     if metadata["merge_replicates"]:
         perturbed_expression_data = averageWithinPerturbation(ad=perturbed_expression_data)
-
+    print("...done. Getting networks...")
     # Get networks
     networks = {}
     for netName in list(metadata["network_datasets"].keys()):
@@ -409,7 +410,7 @@ def set_up_data_networks_conditions(metadata, amount_to_do, outputs):
             target_genes = perturbed_expression_data.var_names, 
             do_aggregate_subnets = metadata["network_datasets"][netName]["do_aggregate_subnets"]
         )
-
+    print("...done. Expanding metadata...")
     # Lay out each set of params 
     experiments = lay_out_runs(
         networks=networks, 
@@ -426,29 +427,7 @@ def set_up_data_networks_conditions(metadata, amount_to_do, outputs):
     except FileNotFoundError:
         pass
     experiments.to_csv( os.path.join(outputs, "experiments.csv") )
-
-    # Simulate data if needed
-    if "do_simulate" in metadata: 
-        if amount_to_do=="evaluations":
-            print("Finding previously simulated data.")
-            perturbed_expression_data = sc.read_h5ad(os.path.join(outputs, "simulated_data.h5ad"))
-        else:
-            print("Simulating data.")
-            grn = ggrn.GRN(
-                train=perturbed_expression_data, 
-                network=networks[metadata["do_simulate"]["network"]],
-            )
-            perturbed_expression_data = grn.simulate_data(
-                [
-                    (r[1][0], r[1][1]) 
-                    for r in perturbed_expression_data.obs[["perturbation", "expression_level_after_perturbation"]].iterrows()
-                ],
-                effects = "uniform_on_provided_network",
-                noise_sd = metadata["do_simulate"]["noise_sd"],
-                seed = 0,
-            )
-            perturbed_expression_data.write_h5ad(os.path.join(outputs, "simulated_data.h5ad"))
-
+    print("... done.")
     return perturbed_expression_data, networks, experiments
 
 def doSplitsMatch(
