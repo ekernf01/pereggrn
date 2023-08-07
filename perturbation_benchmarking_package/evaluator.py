@@ -39,6 +39,7 @@ def makeMainPlots(
         metrics: How to measure performance. 
     """
     # Sometimes the index is too complex for Altair to handle correctly (tuples)
+    evaluationPerPert = evaluationPerPert.copy()
     try:
         evaluationPerPert.index = [p[1] for p in evaluationPerPert.index]
     except IndexError:
@@ -391,12 +392,14 @@ def postprocessEvaluations(evaluations: pd.DataFrame,
     is_baseline = [i in baseline_conditions for i in evaluations["condition"]]
     evaluations["mae_baseline"] = np.NaN
     evaluations.loc[is_baseline, "mae_baseline"] = evaluations.loc[is_baseline, "mae"]
-    evaluations = evaluations.groupby("target", group_keys=False).apply(
-        lambda x:
-            x.fillna(
-                x.loc[x["condition"] == x["baseline_condition"], "mae"].values[0]
-            )
-    )
+    def fetch_baseline_mae(x):
+        try:
+            return x.loc[x["condition"] == x["baseline_condition"], "mae"].values[0]
+        except:
+            return np.NaN
+    for target in evaluations["target"].unique():
+        idx = evaluations.index[target == evaluations["target"]]
+        evaluations.loc[idx, "mae_baseline"] = fetch_baseline_mae(evaluations.loc[idx,:])
     evaluations["mae_benefit"] = evaluations["mae_baseline"] - evaluations["mae"]
     # Fix a bug with parquet not handling mixed-type columns
     evaluations = evaluations.astype({'mae': float, 'mae_baseline': float, 'mae_benefit': float})
