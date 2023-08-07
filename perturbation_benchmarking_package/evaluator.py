@@ -290,7 +290,7 @@ def studyPredictableGenes(evaluationPerTarget: pd.DataFrame,
                     title=f'Standard deviation of predictions ({n_constant}/{n_total} are within {cutoff} of 0)'
                 )
             _ = alt.data_transformers.disable_max_rows()
-            os.makedirs(os.path.join(save_path, genes_considered_as, "variety_in_predictions"), exist_ok=True)
+            os.makedirs(os.path.join(save_path, genes_considered_as, "variety_in_predictions", f"{condition}"), exist_ok=True)
             try:
                 chart.save( os.path.join(save_path, genes_considered_as, "variety_in_predictions", f"{condition}.svg"))
             except Exception as e:

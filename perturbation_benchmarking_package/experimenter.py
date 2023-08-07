@@ -62,6 +62,7 @@ def get_optional_keys():
         "data_split_seed",
         "starting_expression",
         "control_subtype",
+        "kwargs_to_expand",
         "kwargs"
     )
 
@@ -81,7 +82,8 @@ def get_default_metadata():
         "starting_expression": "control",
         "feature_extraction": None,
         "control_subtype": None,
-        "kwargs": None,
+        "kwargs": dict(),
+        "kwargs_to_expand": [],
         "data_split_seed": 0,
         "baseline_condition": 0,
         "num_genes": 10000,
@@ -152,6 +154,8 @@ def validate_metadata(
     
     # Check a few of the values
     assert experiment_name == metadata["unique_id"], "Experiment is labeled right"
+    for k in metadata["kwargs_to_expand"]:
+        assert k not in metadata, f"Key {k} names both an expandable kwarg and an Experiment metadata key. Sorry, but this is not allowed. See get_default_metadata() and get_required_keys() for names of keys reserved for the benchmarking code."
     if not permissive:
         assert metadata["perturbation_dataset"] in set(load_perturbations.load_perturbation_metadata().query("is_ready=='yes'")["name"]), "perturbation data exist as named"
         for netName in metadata["network_datasets"].keys():
@@ -180,13 +184,17 @@ def lay_out_runs(
 
     """
     metadata = metadata.copy() # We're gonna mangle it. :)
-    # This is a dict containing who knows what and it will screw up the cartesian product below if we leave it in.
-    del metadata["kwargs"]
-    # See experimenter.get_networks() to see how the metadata.json turns into this
-    metadata["network_datasets"] = list(networks.keys())
-    # This is just too bulky to want in the csv
+    
+    # ===== Remove items that don't want to be cartesian-producted =====
+    # This is too bulky to want in the csv
     del metadata["readme"]
-    # This can't just be cartesian-producted like everything else. We'll add it back after the product.
+    
+    # Again, too bulky.
+    # See experimenter.get_networks() to see how this entry of the metadata.json is parsed.
+    # For experiments.csv, we just record the network names.
+    metadata["network_datasets"] = list(networks.keys())
+    
+    # Baseline condition will never be an independently varying factor. 
     baseline_condition = metadata["baseline_condition"]
     try:
         baseline_condition = baseline_condition.copy()
@@ -194,16 +202,26 @@ def lay_out_runs(
         pass
     del metadata["baseline_condition"]
 
-    # product splits strings if you don't wrap each in a list.
+    # kwargs is a dict containing arbitrary kwargs for backend code (e.g. batch size for DCD-FG). 
+    # We allow these to be expanded if the user says so.
+    kwargs = metadata["kwargs"].copy()
+    kwargs_to_expand = metadata["kwargs_to_expand"].copy()
+    del metadata["kwargs"]
+    del metadata["kwargs_to_expand"]
+    for k in kwargs_to_expand:
+        metadata[k] = kwargs[k]
+    # ==== Done preparing for cartesian product ====
+
+    # Wrap each singleton in a list. Otherwise product() will split strings.
     for k in metadata.keys():
         if type(metadata[k]) != list:
             metadata[k] = [metadata[k]]
-    # Combos 
+    # Make all combos 
     experiments =  pd.DataFrame(
         [row for row in product(*metadata.values())], 
         columns=metadata.keys()
     )
-    # The dense network is represented as an empty network to save space.
+    # Downstream of this, the dense network is stored as an empty network to save space.
     # Recommended usage is to set network_prior="ignore", otherwise the empty network will be taken literally. 
     for i in experiments.index:
         experiments.loc[i, "network_prior"] = \
@@ -254,6 +272,19 @@ def do_one_run(
         eligible_regulators = eligible_regulators,
         feature_extraction  = experiments.loc[i,"feature_extraction"],
     )
+
+    def simplify_type(x):
+        """Convert a pandas dataframe into JSON serializable types.
+
+        Args:
+            x (pd.DataFrame)
+
+        Returns:
+            dict
+        """
+        return json.loads(x.to_json())
+        
+        
     grn.fit(
         method                               = experiments.loc[i,"regression_method"], 
         cell_type_labels                     = None,
@@ -266,7 +297,8 @@ def do_one_run(
         low_dimensional_structure            = experiments.loc[i,"low_dimensional_structure"],
         low_dimensional_training             = experiments.loc[i,"low_dimensional_training"],
         prediction_timescale                 = experiments.loc[i,"prediction_timescale"],
-        kwargs                               = metadata["kwargs"],
+        kwargs                               = {k:simplify_type(experiments.loc[i,:])[k] if k in metadata["kwargs_to_expand"] else metadata["kwargs"][k] 
+                                                for k in metadata["kwargs"].keys()},
     )
     return grn
 
@@ -390,7 +422,7 @@ def set_up_data_networks_conditions(metadata, amount_to_do, outputs):
         if not experiments.equals(old_experiments):
             print(experiments)
             print(old_experiments)
-            raise ValueError("Experiment layout has changed. Debug or delete previous experiments.csv. Saving new vs old for debugging.")
+            raise ValueError("Experiment layout has changed. Check diffs between experiments.csv and new_experiments.csv. If synonymous, delete experiments.csv and retry.")
     except FileNotFoundError:
         pass
     experiments.to_csv( os.path.join(outputs, "experiments.csv") )
