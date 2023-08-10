@@ -267,10 +267,11 @@ def do_one_run(
         raise ValueError("'eligible_regulators' must be 'human_tfs' or 'perturbed_genes' or 'all'")
     train_data.obs["is_control"] = train_data.obs["is_control"].astype(bool)
     grn = ggrn.GRN(
-        train=train_data, 
-        network             = networks[experiments.loc[i,'network_datasets']],
-        eligible_regulators = eligible_regulators,
-        feature_extraction  = experiments.loc[i,"feature_extraction"],
+        train                = train_data, 
+        network              = networks[experiments.loc[i,'network_datasets']],
+        eligible_regulators  = eligible_regulators,
+        feature_extraction   = experiments.loc[i,"feature_extraction"],
+        validate_immediately = True
     )
 
     def simplify_type(x):
@@ -381,7 +382,7 @@ def filter_genes(expression_quantified: anndata.AnnData, num_genes: int, outputs
     gene_indices = np.union1d(targeted_genes, variable_genes)
     gene_set = expression_quantified.var.index.values[gene_indices]
     pd.DataFrame({"genes_modeled": gene_set}).to_csv(os.path.join(outputs, "genes_modeled.csv"))
-    return expression_quantified[:, gene_set].copy()
+    return expression_quantified[:, list(gene_set)].copy()
 
 
 def set_up_data_networks_conditions(metadata, amount_to_do, outputs):
@@ -466,7 +467,7 @@ def splitDataWrapper(
     """Split the data into train and test.
 
     Args:
-        networks (dict): dict containing LightNetworks. Used to restrict what is allowed in the test set.
+        networks (dict): dict containing LightNetwork objects from the load_networks module. Used to restrict what is allowed in the test set.
         perturbed_expression_data (anndata.AnnData): expression dataset to split
         desired_heldout_fraction (float): number between 0 and 1. fraction in test set.
         allowed_regulators_vs_network_regulators (str, optional): "all", "union", or "intersection".
@@ -517,16 +518,16 @@ def _splitDataHelper(adata, allowedRegulators, desired_heldout_fraction, type_of
     - Perturbed genes may not be measured. These perhaps should be excluded from test data because we can't
         reasonably separate their direct vs indirect effects.
 
-    If type_of_split=="simple", we make no provision for dealing with the above concerns. The only restriction is that
-    all controls go in the training set.
+    If type_of_split=="simple", we make no provision for dealing with the above concerns. 
     If type_of_split=="interventional", the `allowedRegulators` arg can be specified in order to keep any user-specified
     problem cases out of the test data. No matter what, we still use those perturbed profiles as training data, hoping 
-    they will provide useful info about attainable cell states and downstream causal effects. 
+    they will provide useful info about attainable cell states and downstream causal effects. But observations may only 
+    go into the test set if the perturbed genes are in allowedRegulators.
 
-    For some collections of base networks, there are many factors ineligible for use as test data -- so many that 
-    we don't have enough for the test set. In this case we issue a warning and assign as many as possible to test. 
-    For other cases, we have more flexibility, so we send some perturbations to the 
-    training set at random even if we would be able to use them in the test set.
+    For some values of allowedRegulators (especially intersections of many prior networks), there are many factors 
+    ineligible for use as test data -- so many that we don't have enough for the test set. In this case we issue a 
+    warning and assign as many as possible to test. For other cases, we have more flexibility, so we send some 
+    perturbations to the training set at random even if we would be able to use them in the test set.
 
     parameters:
 
