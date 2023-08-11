@@ -267,10 +267,11 @@ def do_one_run(
         raise ValueError("'eligible_regulators' must be 'human_tfs' or 'perturbed_genes' or 'all'")
     train_data.obs["is_control"] = train_data.obs["is_control"].astype(bool)
     grn = ggrn.GRN(
-        train=train_data, 
-        network             = networks[experiments.loc[i,'network_datasets']],
-        eligible_regulators = eligible_regulators,
-        feature_extraction  = experiments.loc[i,"feature_extraction"],
+        train                = train_data, 
+        network              = networks[experiments.loc[i,'network_datasets']],
+        eligible_regulators  = eligible_regulators,
+        feature_extraction   = experiments.loc[i,"feature_extraction"],
+        validate_immediately = True
     )
 
     def simplify_type(x):
@@ -381,12 +382,13 @@ def filter_genes(expression_quantified: anndata.AnnData, num_genes: int, outputs
     gene_indices = np.union1d(targeted_genes, variable_genes)
     gene_set = expression_quantified.var.index.values[gene_indices]
     pd.DataFrame({"genes_modeled": gene_set}).to_csv(os.path.join(outputs, "genes_modeled.csv"))
-    return expression_quantified[:, gene_set].copy()
+    return expression_quantified[:, list(gene_set)].copy()
 
 
 def set_up_data_networks_conditions(metadata, amount_to_do, outputs):
     """Set up the expression data, networks, and a sample sheet for this experiment."""
     # Data, networks, experiment sheet must be generated in that order because reasons
+    print("Getting data...")
     perturbed_expression_data = load_perturbations.load_perturbation(metadata["perturbation_dataset"])
     try:
         perturbed_expression_data = perturbed_expression_data.to_memory()
@@ -399,7 +401,7 @@ def set_up_data_networks_conditions(metadata, amount_to_do, outputs):
     elap = "expression_level_after_perturbation"
     if metadata["merge_replicates"]:
         perturbed_expression_data = averageWithinPerturbation(ad=perturbed_expression_data)
-
+    print("...done. Getting networks...")
     # Get networks
     networks = {}
     for netName in list(metadata["network_datasets"].keys()):
@@ -409,7 +411,7 @@ def set_up_data_networks_conditions(metadata, amount_to_do, outputs):
             target_genes = perturbed_expression_data.var_names, 
             do_aggregate_subnets = metadata["network_datasets"][netName]["do_aggregate_subnets"]
         )
-
+    print("...done. Expanding metadata...")
     # Lay out each set of params 
     experiments = lay_out_runs(
         networks=networks, 
@@ -426,29 +428,7 @@ def set_up_data_networks_conditions(metadata, amount_to_do, outputs):
     except FileNotFoundError:
         pass
     experiments.to_csv( os.path.join(outputs, "experiments.csv") )
-
-    # Simulate data if needed
-    if "do_simulate" in metadata: 
-        if amount_to_do=="evaluations":
-            print("Finding previously simulated data.")
-            perturbed_expression_data = sc.read_h5ad(os.path.join(outputs, "simulated_data.h5ad"))
-        else:
-            print("Simulating data.")
-            grn = ggrn.GRN(
-                train=perturbed_expression_data, 
-                network=networks[metadata["do_simulate"]["network"]],
-            )
-            perturbed_expression_data = grn.simulate_data(
-                [
-                    (r[1][0], r[1][1]) 
-                    for r in perturbed_expression_data.obs[["perturbation", "expression_level_after_perturbation"]].iterrows()
-                ],
-                effects = "uniform_on_provided_network",
-                noise_sd = metadata["do_simulate"]["noise_sd"],
-                seed = 0,
-            )
-            perturbed_expression_data.write_h5ad(os.path.join(outputs, "simulated_data.h5ad"))
-
+    print("... done.")
     return perturbed_expression_data, networks, experiments
 
 def doSplitsMatch(
@@ -487,7 +467,7 @@ def splitDataWrapper(
     """Split the data into train and test.
 
     Args:
-        networks (dict): dict containing LightNetworks. Used to restrict what is allowed in the test set.
+        networks (dict): dict containing LightNetwork objects from the load_networks module. Used to restrict what is allowed in the test set.
         perturbed_expression_data (anndata.AnnData): expression dataset to split
         desired_heldout_fraction (float): number between 0 and 1. fraction in test set.
         allowed_regulators_vs_network_regulators (str, optional): "all", "union", or "intersection".
@@ -538,16 +518,16 @@ def _splitDataHelper(adata, allowedRegulators, desired_heldout_fraction, type_of
     - Perturbed genes may not be measured. These perhaps should be excluded from test data because we can't
         reasonably separate their direct vs indirect effects.
 
-    If type_of_split=="simple", we make no provision for dealing with the above concerns. The only restriction is that
-    all controls go in the training set.
+    If type_of_split=="simple", we make no provision for dealing with the above concerns. 
     If type_of_split=="interventional", the `allowedRegulators` arg can be specified in order to keep any user-specified
     problem cases out of the test data. No matter what, we still use those perturbed profiles as training data, hoping 
-    they will provide useful info about attainable cell states and downstream causal effects. 
+    they will provide useful info about attainable cell states and downstream causal effects. But observations may only 
+    go into the test set if the perturbed genes are in allowedRegulators.
 
-    For some collections of base networks, there are many factors ineligible for use as test data -- so many that 
-    we don't have enough for the test set. In this case we issue a warning and assign as many as possible to test. 
-    For other cases, we have more flexibility, so we send some perturbations to the 
-    training set at random even if we would be able to use them in the test set.
+    For some values of allowedRegulators (especially intersections of many prior networks), there are many factors 
+    ineligible for use as test data -- so many that we don't have enough for the test set. In this case we issue a 
+    warning and assign as many as possible to test. For other cases, we have more flexibility, so we send some 
+    perturbations to the training set at random even if we would be able to use them in the test set.
 
     parameters:
 
@@ -598,9 +578,9 @@ def _splitDataHelper(adata, allowedRegulators, desired_heldout_fraction, type_of
         adata_heldout.uns["perturbed_and_measured_genes"]     = set(adata_heldout.uns["perturbed_and_measured_genes"]).intersection(testSetPerturbations)
         adata_train.uns[  "perturbed_but_not_measured_genes"] = set(adata_train.uns[  "perturbed_but_not_measured_genes"]).intersection(trainingSetPerturbations)
         adata_heldout.uns["perturbed_but_not_measured_genes"] = set(adata_heldout.uns["perturbed_but_not_measured_genes"]).intersection(testSetPerturbations)
-        print("Test set size:")
+        print("Test set num perturbations:")
         print(len(testSetPerturbations))
-        print("Training set size:")
+        print("Training set num perturbations:")
         print(len(trainingSetPerturbations))    
     elif type_of_split == "simple":
         np.random.seed(data_split_seed)
@@ -622,6 +602,10 @@ def _splitDataHelper(adata, allowedRegulators, desired_heldout_fraction, type_of
         raise NotImplementedError("Sorry, we are still working on this feature.")
     else:
         raise ValueError(f"`type_of_split` must be 'simple' or 'interventional'; got {type_of_split}.")
+    print("Test set size:")
+    print(adata_heldout.n_obs)
+    print("Training set size:")
+    print(adata_train.n_obs)
     return adata_train, adata_heldout
 
 
