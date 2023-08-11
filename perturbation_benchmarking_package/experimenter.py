@@ -578,9 +578,9 @@ def _splitDataHelper(adata, allowedRegulators, desired_heldout_fraction, type_of
         adata_heldout.uns["perturbed_and_measured_genes"]     = set(adata_heldout.uns["perturbed_and_measured_genes"]).intersection(testSetPerturbations)
         adata_train.uns[  "perturbed_but_not_measured_genes"] = set(adata_train.uns[  "perturbed_but_not_measured_genes"]).intersection(trainingSetPerturbations)
         adata_heldout.uns["perturbed_but_not_measured_genes"] = set(adata_heldout.uns["perturbed_but_not_measured_genes"]).intersection(testSetPerturbations)
-        print("Test set size:")
+        print("Test set num perturbations:")
         print(len(testSetPerturbations))
-        print("Training set size:")
+        print("Training set num perturbations:")
         print(len(trainingSetPerturbations))    
     elif type_of_split == "simple":
         np.random.seed(data_split_seed)
@@ -602,6 +602,10 @@ def _splitDataHelper(adata, allowedRegulators, desired_heldout_fraction, type_of
         raise NotImplementedError("Sorry, we are still working on this feature.")
     else:
         raise ValueError(f"`type_of_split` must be 'simple' or 'interventional'; got {type_of_split}.")
+    print("Test set size:")
+    print(adata_heldout.n_obs)
+    print("Training set size:")
+    print(adata_train.n_obs)
     return adata_train, adata_heldout
 
 
