@@ -157,7 +157,7 @@ def validate_metadata(
     for k in metadata["kwargs_to_expand"]:
         assert k not in metadata, f"Key {k} names both an expandable kwarg and an Experiment metadata key. Sorry, but this is not allowed. See get_default_metadata() and get_required_keys() for names of keys reserved for the benchmarking code."
     if not permissive:
-        assert metadata["perturbation_dataset"] in set(load_perturbations.load_perturbation_metadata().query("is_ready=='yes'")["name"]), "perturbation data exist as named"
+        assert metadata["perturbation_dataset"] in set(load_perturbations.load_perturbation_metadata().query("is_ready=='yes'")["name"]), "Cannot find perturbation data under that name. Try load_perturbations.load_perturbation_metadata()."
         for netName in metadata["network_datasets"].keys():
             assert netName in set(load_networks.load_grn_metadata()["name"]).union({"dense", "empty"}) or "random" in netName, "Networks exist as named"
             assert "subnets" in metadata["network_datasets"][netName].keys(), "Optional metadata fields filled correctly"
@@ -191,7 +191,7 @@ def lay_out_runs(
     
     # Again, too bulky.
     # See experimenter.get_networks() to see how this entry of the metadata.json is parsed.
-    # For experiments.csv, we just record the network names.
+    # For conditions.csv, we just record the network names.
     metadata["network_datasets"] = list(networks.keys())
     
     # Baseline condition will never be an independently varying factor. 
@@ -217,22 +217,22 @@ def lay_out_runs(
         if type(metadata[k]) != list:
             metadata[k] = [metadata[k]]
     # Make all combos 
-    experiments =  pd.DataFrame(
+    conditions =  pd.DataFrame(
         [row for row in product(*metadata.values())], 
         columns=metadata.keys()
     )
     # Downstream of this, the dense network is stored as an empty network to save space.
     # Recommended usage is to set network_prior="ignore", otherwise the empty network will be taken literally. 
-    for i in experiments.index:
-        experiments.loc[i, "network_prior"] = \
-        "ignore" if experiments.loc[i, "network_datasets"] == "dense" else experiments.loc[i, "network_prior"]
+    for i in conditions.index:
+        conditions.loc[i, "network_prior"] = \
+        "ignore" if conditions.loc[i, "network_datasets"] == "dense" else conditions.loc[i, "network_prior"]
 
-    experiments.index.name = "condition"
-    experiments["baseline_condition"] = baseline_condition
-    return experiments
+    conditions.index.name = "condition"
+    conditions["baseline_condition"] = baseline_condition
+    return conditions
   
 def do_one_run(
-    experiments: pd.DataFrame, 
+    conditions: pd.DataFrame, 
     i: int, 
     train_data: anndata.AnnData, 
     test_data: anndata.AnnData, 
@@ -244,21 +244,21 @@ def do_one_run(
     """Do one run (fit a GRN model and make predictions) as part of this experiment.
 
     Args:
-        experiments (pd.DataFrame): Output of lay_out_runs
-        i (int): A value from the experiments.index
+        conditions (pd.DataFrame): Output of lay_out_runs
+        i (int): A value from the conditions.index
         human_tfs: A list of human TF's. You can pass in None if you never plan to restrict eligible regulators to just TF's.
         Other args: see help(lay_out_runs)
 
     Returns:
         anndata.AnnData: Predicted expression
     """
-    if experiments.loc[i,'eligible_regulators'] == "human_tfs":
+    if conditions.loc[i,'eligible_regulators'] == "human_tfs":
         if human_tfs is None:
             raise ValueError("If you want to restrict to only TF's as regulators, provide a list to human_tfs.")
         eligible_regulators = human_tfs 
-    elif experiments.loc[i,'eligible_regulators'] == "all":
+    elif conditions.loc[i,'eligible_regulators'] == "all":
         eligible_regulators = None
-    elif experiments.loc[i,'eligible_regulators'] == "perturbed_genes":
+    elif conditions.loc[i,'eligible_regulators'] == "perturbed_genes":
         eligible_regulators = set.union(
             set(train_data.uns["perturbed_and_measured_genes"]),
             set( test_data.uns["perturbed_and_measured_genes"])
@@ -268,9 +268,9 @@ def do_one_run(
     train_data.obs["is_control"] = train_data.obs["is_control"].astype(bool)
     grn = ggrn.GRN(
         train                = train_data, 
-        network              = networks[experiments.loc[i,'network_datasets']],
+        network              = networks[conditions.loc[i,'network_datasets']],
         eligible_regulators  = eligible_regulators,
-        feature_extraction   = experiments.loc[i,"feature_extraction"],
+        feature_extraction   = conditions.loc[i,"feature_extraction"],
         validate_immediately = True
     )
 
@@ -287,18 +287,18 @@ def do_one_run(
         
         
     grn.fit(
-        method                               = experiments.loc[i,"regression_method"], 
+        method                               = conditions.loc[i,"regression_method"], 
         cell_type_labels                     = None,
         cell_type_sharing_strategy           = "identical",
-        network_prior                        = experiments.loc[i,"network_prior"],
-        pruning_strategy                     = experiments.loc[i,"pruning_strategy"],
-        pruning_parameter                    = experiments.loc[i,"pruning_parameter"],
-        predict_self                         = experiments.loc[i,"predict_self"],
-        matching_method                      = experiments.loc[i,"matching_method"],
-        low_dimensional_structure            = experiments.loc[i,"low_dimensional_structure"],
-        low_dimensional_training             = experiments.loc[i,"low_dimensional_training"],
-        prediction_timescale                 = experiments.loc[i,"prediction_timescale"],
-        kwargs                               = {k:simplify_type(experiments.loc[i,:])[k] if k in metadata["kwargs_to_expand"] else metadata["kwargs"][k] 
+        network_prior                        = conditions.loc[i,"network_prior"],
+        pruning_strategy                     = conditions.loc[i,"pruning_strategy"],
+        pruning_parameter                    = conditions.loc[i,"pruning_parameter"],
+        predict_self                         = conditions.loc[i,"predict_self"],
+        matching_method                      = conditions.loc[i,"matching_method"],
+        low_dimensional_structure            = conditions.loc[i,"low_dimensional_structure"],
+        low_dimensional_training             = conditions.loc[i,"low_dimensional_training"],
+        prediction_timescale                 = conditions.loc[i,"prediction_timescale"],
+        kwargs                               = {k:simplify_type(conditions.loc[i,:])[k] if k in metadata["kwargs_to_expand"] else metadata["kwargs"][k] 
                                                 for k in metadata["kwargs"].keys()},
     )
     return grn
@@ -413,23 +413,23 @@ def set_up_data_networks_conditions(metadata, amount_to_do, outputs):
         )
     print("...done. Expanding metadata...")
     # Lay out each set of params 
-    experiments = lay_out_runs(
+    conditions = lay_out_runs(
         networks=networks, 
         metadata=metadata,
     )
     try:
-        old_experiments = pd.read_csv(os.path.join(outputs, "experiments.csv"), index_col=0)
-        experiments.to_csv(        os.path.join(outputs, "new_experiments.csv") )
-        experiments = pd.read_csv( os.path.join(outputs, "new_experiments.csv"), index_col=0 )
-        if not experiments.equals(old_experiments):
-            print(experiments)
-            print(old_experiments)
-            raise ValueError("Experiment layout has changed. Check diffs between experiments.csv and new_experiments.csv. If synonymous, delete experiments.csv and retry.")
+        old_conditions = pd.read_csv(os.path.join(outputs, "conditions.csv"), index_col=0)
+        conditions.to_csv(        os.path.join(outputs, "new_conditions.csv") )
+        conditions = pd.read_csv( os.path.join(outputs, "new_conditions.csv"), index_col=0 )
+        if not conditions.equals(old_conditions):
+            print(conditions)
+            print(old_conditions)
+            raise ValueError("Experiment layout has changed. Check diffs between conditions.csv and new_conditions.csv. If synonymous, delete conditions.csv and retry.")
     except FileNotFoundError:
         pass
-    experiments.to_csv( os.path.join(outputs, "experiments.csv") )
+    conditions.to_csv( os.path.join(outputs, "conditions.csv") )
     print("... done.")
-    return perturbed_expression_data, networks, experiments
+    return perturbed_expression_data, networks, conditions
 
 def doSplitsMatch(
         experiment1: str, 
@@ -695,9 +695,9 @@ def safe_save_adata(adata, h5ad):
         pass
     adata.write_h5ad( h5ad )
 
-def load_successful_experiments(outputs):
-    """Load a subset of experiments.csv for which predictions were successfully made."""
-    experiments =     pd.read_csv( os.path.join(outputs, "experiments.csv") )
+def load_successful_conditions(outputs):
+    """Load a subset of conditions.csv for which predictions were successfully made."""
+    conditions =     pd.read_csv( os.path.join(outputs, "conditions.csv") )
     def has_predictions(i):
         print(f"Checking for {i}", flush=True)
         try:
@@ -707,5 +707,5 @@ def load_successful_experiments(outputs):
         except:
             print(f"Skipping {i}: predictions could not be read.", flush = True)
             return False
-    experiments = experiments.loc[[i for i in experiments.index if has_predictions(i)], :]
-    return experiments
+    conditions = conditions.loc[[i for i in conditions.index if has_predictions(i)], :]
+    return conditions

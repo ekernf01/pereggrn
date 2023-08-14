@@ -319,7 +319,7 @@ def studyPredictableGenes(evaluationPerTarget: pd.DataFrame,
 
 def plotOneTargetGene(gene: str, 
                       outputs: str, 
-                      experiments: pd.DataFrame, 
+                      conditions: pd.DataFrame, 
                       factor_varied: str,
                       train_data: anndata.AnnData, 
                       heldout_data: anndata.AnnData, 
@@ -330,7 +330,7 @@ def plotOneTargetGene(gene: str,
     Args:
         gene (str): gene name (usually the HGNC symbol)
         outputs (str): where to save the plots
-        experiments (pd.DataFrame): Metadata from experiments.csv
+        conditions (pd.DataFrame): Metadata from conditions.csv
         factor_varied (str): what to use as the x axis in the plot
         train_data (anndata.AnnData): training expression
         heldout_data (anndata.AnnData): test-set expression
@@ -360,7 +360,7 @@ def plotOneTargetGene(gene: str,
     }
     expression = pd.concat(expression)
     expression = expression.reset_index()
-    expression = expression.merge(experiments, left_on="experiment", right_index=True)
+    expression = expression.merge(conditions, left_on="experiment", right_index=True)
     os.makedirs(os.path.join(outputs), exist_ok=True)
     alt.Chart(data=expression).mark_point().encode(
         x = "observed:Q",y = "predicted:Q", color = "is_trainset:N"
@@ -373,18 +373,18 @@ def plotOneTargetGene(gene: str,
     return   
 
 def postprocessEvaluations(evaluations: pd.DataFrame, 
-                           experiments: pd.DataFrame)-> pd.DataFrame:
+                           conditions: pd.DataFrame)-> pd.DataFrame:
     """Compare MAE for each observation to that of a a user-specified baseline method.
 
     Args:
         evaluations (pd.DataFrame): evaluation results for each test-set observation
-        experiments (pd.DataFrame): metadata from experiments.csv
+        conditions (pd.DataFrame): metadata from conditions.csv
 
     Returns:
         pd.DataFrame: evaluation results with additional columns 'mae_baseline' and 'mae_benefit'
     """
     evaluations   = pd.concat(evaluations)
-    evaluations   = evaluations.merge(experiments,   how = "left", right_index = True, left_on = "index")
+    evaluations   = evaluations.merge(conditions,   how = "left", right_index = True, left_on = "index")
     evaluations   = pd.DataFrame(evaluations.to_dict())
     # Add some info on each evaluation-per-target, such as the baseline MAE
     evaluations["target"] = [i[1] for i in evaluations.index]
@@ -418,46 +418,49 @@ def postprocessEvaluations(evaluations: pd.DataFrame,
     return evaluations
 
 def evaluateCausalModel(
-    heldout:dict, 
-    predictions:dict, 
-    baseline:dict,
-    experiments: pd.DataFrame, 
+    get_current_data_split:callable, 
+    predicted_expression: dict,
+    is_test_set: bool,
+    conditions: pd.DataFrame, 
     outputs: str, 
     classifier = None, 
     do_scatterplots = True):
     """Compile plots and tables comparing heldout data and predictions for same. 
 
     Args:
-        heldout, predictions, baseline: each of these is a dictionary with keys equal to index of experiments. 
-            Each value is an AnnData object. 
-            Baseline is expression before perturbation, for use in calculating log fold change. 
+        get_current_data_split: function to retrieve tuple of anndatas (train, test)
+        predicted_expression: dict with keys equal to the index in "conditions" and values being anndata objects. 
+        is_test_set: True if the predicted_expression is on the test set and False if predicted_expression is on the training data.
         classifier (sklearn.LogisticRegression): Optional, to judge results on cell type accuracy. 
-        experiments (pd.DataFrame): Metadata for the different combinations used in this experiment. 
+        conditions (pd.DataFrame): Metadata for the different combinations used in this experiment. 
         outputs (String): Saves output here.
     """
     evaluationPerPert = {}
     evaluationPerTarget = {}
-    evaluations = [
-        evaluateOnePrediction(
-            expression =            heldout[experiment],
-            predictedExpression=predictions[experiment],
-            baseline =             baseline[experiment],
-            doPlots=do_scatterplots,
-            outputs = outputs,
-            experiment_name = experiment,
-            classifier=classifier,        
+
+    evaluations  = []
+    for i in predicted_expression.keys():
+        perturbed_expression_data_train_i, perturbed_expression_data_heldout_i = get_current_data_split(i)
+        evaluations.append(
+            evaluateOnePrediction(
+                expression = perturbed_expression_data_heldout_i if is_test_set else perturbed_expression_data_train_i,
+                predictedExpression = predicted_expression[i],
+                baseline = perturbed_expression_data_train_i[[bool(b) for b in perturbed_expression_data_train_i.obs["is_control"]], :],
+                doPlots=do_scatterplots,
+                outputs = outputs,
+                experiment_name = i,
+                classifier=classifier,        
+            )
         )
-        for experiment in predictions.keys()
-    ]
     # That parallel code returns a list of tuples. I want a pair of dicts instead. 
-    for i,experiment in enumerate(predictions.keys()):
-        evaluationPerPert[experiment], evaluationPerTarget[experiment] = evaluations[i]
-        evaluationPerPert[experiment]["index"]   = experiment
-        evaluationPerTarget[experiment]["index"] = experiment
+    for i,condition in enumerate(predicted_expression.keys()):
+        evaluationPerPert[condition], evaluationPerTarget[condition] = evaluations[i]
+        evaluationPerPert[condition]["index"]   = condition
+        evaluationPerTarget[condition]["index"] = condition
     del evaluations
     # Concatenate and add some extra info
-    evaluationPerPert = postprocessEvaluations(evaluationPerPert, experiments)
-    evaluationPerTarget = postprocessEvaluations(evaluationPerTarget, experiments)
+    evaluationPerPert = postprocessEvaluations(evaluationPerPert, conditions)
+    evaluationPerTarget = postprocessEvaluations(evaluationPerTarget, conditions)
     return evaluationPerPert, evaluationPerTarget
 
 def safe_squeeze(X):
