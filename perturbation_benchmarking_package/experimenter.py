@@ -463,6 +463,7 @@ def splitDataWrapper(
     allowed_regulators_vs_network_regulators: str = "all", 
     type_of_split: str = "interventional" ,
     data_split_seed: int = None,
+    verbose: bool = True,
 ) -> tuple:
     """Split the data into train and test.
 
@@ -478,6 +479,7 @@ def splitDataWrapper(
         type_of_split (str, optional): "simple" (simple random split) or "interventional" (restrictions 
             on test set such as no overlap with trainset). Defaults to "interventional".
         data_split_seed (int, optional): random seed. Defaults to None.
+        verbose (bool, optional): print split sizes?
 
     Returns:
         tuple of anndata objects: train, test
@@ -505,10 +507,16 @@ def splitDataWrapper(
             desired_heldout_fraction = desired_heldout_fraction,
             type_of_split            = type_of_split,
             data_split_seed = data_split_seed,
+            verbose = verbose,
         )
     return perturbed_expression_data_train, perturbed_expression_data_heldout
 
-def _splitDataHelper(adata, allowedRegulators, desired_heldout_fraction, type_of_split, data_split_seed):
+def _splitDataHelper(adata: anndata.AnnData, 
+                     allowedRegulators: list, 
+                     desired_heldout_fraction: float, 
+                     type_of_split: str, 
+                     data_split_seed: int, 
+                     verbose: bool):
     """Determine a train-test split satisfying constraints imposed by base networks and available data.
     
     A few factors complicate the training-test split. 
@@ -535,7 +543,7 @@ def _splitDataHelper(adata, allowedRegulators, desired_heldout_fraction, type_of
     - allowedRegulators (list or set): interventions allowed to be in the test set. 
     - type_of_split (str): if "interventional" (default), then any perturbation is placed in either the training or the test set, but not both. 
         If "simple", then we use a simple random split, and replicates of the same perturbation are allowed to go into different folds.
-
+    - verbose (bool): print train and test sizes?
     """
     assert type(allowedRegulators) is list or type(allowedRegulators) is set, "allowedRegulators must be a list or set of allowed genes"
     if data_split_seed is None:
@@ -578,10 +586,11 @@ def _splitDataHelper(adata, allowedRegulators, desired_heldout_fraction, type_of
         adata_heldout.uns["perturbed_and_measured_genes"]     = set(adata_heldout.uns["perturbed_and_measured_genes"]).intersection(testSetPerturbations)
         adata_train.uns[  "perturbed_but_not_measured_genes"] = set(adata_train.uns[  "perturbed_but_not_measured_genes"]).intersection(trainingSetPerturbations)
         adata_heldout.uns["perturbed_but_not_measured_genes"] = set(adata_heldout.uns["perturbed_but_not_measured_genes"]).intersection(testSetPerturbations)
-        print("Test set num perturbations:")
-        print(len(testSetPerturbations))
-        print("Training set num perturbations:")
-        print(len(trainingSetPerturbations))    
+        if verbose:
+            print("Test set num perturbations:")
+            print(len(testSetPerturbations))
+            print("Training set num perturbations:")
+            print(len(trainingSetPerturbations))    
     elif type_of_split == "simple":
         np.random.seed(data_split_seed)
         train_obs = np.random.choice(
@@ -601,11 +610,12 @@ def _splitDataHelper(adata, allowedRegulators, desired_heldout_fraction, type_of
     elif type_of_split == "genetic_interaction":
         raise NotImplementedError("Sorry, we are still working on this feature.")
     else:
-        raise ValueError(f"`type_of_split` must be 'simple' or 'interventional'; got {type_of_split}.")
-    print("Test set size:")
-    print(adata_heldout.n_obs)
-    print("Training set size:")
-    print(adata_train.n_obs)
+        raise ValueError(f"`type_of_split` must be 'simple' or 'interventional' or 'genetic_interaction'; got {type_of_split}.")
+    if verbose:
+        print("Test set size:")
+        print(adata_heldout.n_obs)
+        print("Training set size:")
+        print(adata_train.n_obs)
     return adata_train, adata_heldout
 
 
