@@ -682,7 +682,8 @@ def downsample(adata: anndata.AnnData, proportion: float, seed = None, proportio
 def safe_save_adata(adata, h5ad):
     """Clean up an AnnData for saving. AnnData has trouble saving sets, pandas columns that have dtype "object", and certain matrix types."""
     adata.raw = None
-    adata.X = scipy.sparse.csr_matrix(adata.X)
+    if type(adata.X) not in {np.ndarray, np.matrix, scipy.sparse.csr_matrix, scipy.sparse.csc_matrix}:
+        adata.X = scipy.sparse.csr_matrix(adata.X)
     try:
         del adata.obs["is_control"] 
     except KeyError as e:
