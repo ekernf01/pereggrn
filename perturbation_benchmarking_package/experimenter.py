@@ -607,6 +607,7 @@ def _splitDataHelper(adata: anndata.AnnData,
         adata_heldout.uns["perturbed_and_measured_genes"]     = set(adata_heldout.uns["perturbed_and_measured_genes"]).intersection(testSetPerturbations)
         adata_train.uns[  "perturbed_but_not_measured_genes"] = set(adata_train.uns[  "perturbed_but_not_measured_genes"]).intersection(trainingSetPerturbations)
         adata_heldout.uns["perturbed_but_not_measured_genes"] = set(adata_heldout.uns["perturbed_but_not_measured_genes"]).intersection(testSetPerturbations)
+    # Eric was here
     elif type_of_split == "genetic_interaction":
         raise NotImplementedError("Sorry, we are still working on this feature.")
     else:
