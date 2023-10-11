@@ -14,6 +14,7 @@ import ggrn.api as ggrn
 import load_networks
 import load_perturbations
 from collections import OrderedDict
+from sklearn.ensemble import RandomForestClassifier
 
 def get_required_keys():
     """Get all metadata keys that are required by downstream code. Some have 
@@ -654,6 +655,29 @@ def averageWithinPerturbation(ad: anndata.AnnData, confounders = []):
     new_ad.uns = ad.uns.copy()
     return new_ad
 
+def train_classifier(adata: anndata.AnnData, target_key: str = None):
+    """Train a random forest classifier to predict the target key (by default, "cell_type" or "louvain")
+
+    Args:
+        adata (anndata.AnnData): perturbation transcriptomics data conforming to the expectations enforced by load_perturbations.check_perturbation_dataset(). 
+        target_key (str, optional): Column of adata.obs to use as labels. Defaults to None.
+
+    Returns:
+        None or a scikit learn random forest classifier.
+    """
+    assert target_key is None or target_key in adata.obs.columns, f"The column {target_key} was not found in the sample metadata, so the classifier could not be trained."
+    if target_key is None:
+        if "cell_type" in adata.obs.keys():
+            target_key = "cell_type"
+        elif "louvain" in adata.uns.keys():
+            target_key = "louvain"
+        else:
+            return None
+    X = adata.X
+    y = adata.obs[target_key]
+    model = RandomForestClassifier(n_estimators=100, random_state=0,    )
+    model.fit(X, y)
+    return model
 
 def downsample(adata: anndata.AnnData, proportion: float, seed = None, proportion_genes = 1):
     """Downsample training data to a given fraction, always keeping controls. 

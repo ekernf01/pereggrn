@@ -5,6 +5,8 @@ Summary: Systematic benchmarking of in silico genetic perturbations
 Home-page: https://github.com/ekernf01/perturbation_benchmarking_package
 Author: Eric Kernfeld
 Author-email: eric.kern13@gmail.com
+License: UNKNOWN
+Platform: UNKNOWN
 Requires-Python: >=3.7
 Description-Content-Type: text/markdown
 
@@ -26,3 +28,4 @@ do
     pip install ${p} @ http://github.com/ekernf01/${p}
 done
 ```
+

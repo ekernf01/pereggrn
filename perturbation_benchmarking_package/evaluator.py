@@ -1,5 +1,4 @@
-"""evaluator.py is a collection of functions for making and testing predictions about expression fold change after genetic perturbations.
-It dedicates particular attention to interfacing with CellOracle, a thought-provoking and flexible perturbation prediction method.
+"""evaluator.py is a collection of functions for testing predictions about expression fold change.
 """
 from joblib import Parallel, delayed, cpu_count
 import numpy as np
@@ -8,14 +7,11 @@ import anndata
 from scipy.stats import spearmanr as spearmanr
 from scipy.stats import rankdata as rank
 import os 
-import sys
-import gc
 try:
     import gseapy
 except:
     print("GSEAPY is unavailable; will skip some enrichment results.")
 import altair as alt
-from contextlib import redirect_stdout
 
 def makeMainPlots(
     evaluationPerPert: pd.DataFrame, 
@@ -423,7 +419,7 @@ def evaluateCausalModel(
     is_test_set: bool,
     conditions: pd.DataFrame, 
     outputs: str, 
-    classifier = None, 
+    classifier, 
     do_scatterplots = True):
     """Compile plots and tables comparing heldout data and predictions for same. 
 
@@ -431,7 +427,7 @@ def evaluateCausalModel(
         get_current_data_split: function to retrieve tuple of anndatas (train, test)
         predicted_expression: dict with keys equal to the index in "conditions" and values being anndata objects. 
         is_test_set: True if the predicted_expression is on the test set and False if predicted_expression is on the training data.
-        classifier (sklearn.LogisticRegression): Optional, to judge results on cell type accuracy. 
+        classifier (sklearn.LogisticRegression): sklearn classifier or None, to judge results based on cell type accuracy. 
         conditions (pd.DataFrame): Metadata for the different combinations used in this experiment. 
         outputs (String): Saves output here.
     """
@@ -473,9 +469,15 @@ def safe_squeeze(X):
         np.array: 1-d version of the input
     """
     try:
-        X = X.toarray().squeeze()
+        X = X.toarray()
     except:
-        X = X.squeeze()
+        pass
+    try:
+        X = np.asarray(X)
+    except:
+        pass
+    X = X.squeeze()
+    assert len(X.shape)==1, "squeeze failed -- is expression stored in a weird type of array other than numpy matrix/array/memmap, anndata view, or scipy csr sparse?"
     return X
 
 def evaluate_per_target(i: int, target: str, expression, predictedExpression):
@@ -514,27 +516,30 @@ def evaluate_across_targets(expression: anndata.AnnData, predictedExpression: an
     metrics_per_target = pd.DataFrame(results, columns=["target", "standard_deviation", "mae", "mse"]).set_index("target")
     return metrics_per_target
 
-def evaluate_per_pert(i: int, 
-                      pert: str,
-                      expression: anndata.AnnData, 
-                      predictedExpression: anndata.AnnData,
-                      baseline: anndata.AnnData, 
-                      classifier=None) -> pd.DataFrame:
-    """Calculate evaluation metrics for one perturbations. 
+def evaluate_per_pert(pert: str,
+                      all_perts: pd.Series,
+                      expression: np.matrix, 
+                      predictedExpression: np.matrix,
+                      baseline: np.matrix, 
+                      classifier, 
+                      ) -> pd.DataFrame:
+    """Calculate evaluation metrics for one perturbation. 
 
     Args:
-        i (int): index of the perturbation to be examined
         pert (str): name(s) of perturbed gene(s)
-        expression (anndata.AnnData): actual expression, log1p-scale
-        predictedExpression (anndata.AnnData): predicted expression, log1p-scale
-        baseline (anndata.AnnData): baseline expression, log1p-scale
-        classifier (optional): Optional sklearn classifier to judge results by cell type label accuracy
+        all_perts (pd.Series): name(s) of perturbed gene(s), one per sample in predictedExpression
+        expression (np.matrix): actual expression, log1p-scale. We use a matrix, not an AnnData, for fast parallelism via memory sharing.
+        predictedExpression (np.matrix): predicted expression, log1p-scale
+        baseline (np.matrix): baseline expression, log1p-scale
+        classifier (optional): None or sklearn classifier to judge results by cell type label accuracy
 
     Returns:
         pd.DataFrame: Evaluation results for each perturbation
     """
-    predicted = safe_squeeze(predictedExpression[i, :])
-    observed = safe_squeeze(expression[i, :])
+    i = all_perts==pert
+    predicted = safe_squeeze(predictedExpression[i, :].mean(axis=0))
+    observed = safe_squeeze(expression[i, :].mean(axis=0))
+    assert observed.shape[0] == expression.shape[1]
     def is_constant(x):
         return np.std(x) < 1e-12
     if type(predicted) is float and np.isnan(predicted) or is_constant(predicted - baseline) or is_constant(observed - baseline):
@@ -544,11 +549,11 @@ def evaluate_per_pert(i: int,
         mse = np.linalg.norm(observed - predicted)**2
         mae = np.abs(observed - predicted).mean()
         proportion_correct_direction = np.mean((observed >= 0) == (predicted >= 0))
-        cell_fate_correct = np.nan
+        cell_type_correct = np.nan
         if classifier is not None:
             class_observed = classifier.predict(np.reshape(observed, (1, -1)))[0]
             class_predicted = classifier.predict(np.reshape(predicted, (1, -1)))[0]
-            cell_fate_correct = 1.0 * (class_observed == class_predicted)
+            cell_type_correct = 1.0 * (class_observed == class_predicted)
         # Some GEARS metrics from their extended data figure 1
         def mse_top_n(n, p=predicted, o=observed):
             top_n = rank(-np.abs(o)) <= n
@@ -556,7 +561,7 @@ def evaluate_per_pert(i: int,
         mse_top_20  = mse_top_n(n=20)
         mse_top_100 = mse_top_n(n=100)
         mse_top_200 = mse_top_n(n=200)
-        return pert, [spearman, spearmanp, cell_fate_correct, 
+        return pert, [spearman, spearmanp, cell_type_correct, 
                         mse_top_20, mse_top_100, mse_top_200,
                         mse, mae, proportion_correct_direction]
 
@@ -564,7 +569,7 @@ def evaluate_across_perts(expression: anndata.AnnData,
                           predictedExpression: anndata.AnnData, 
                           baseline: anndata.AnnData, 
                           experiment_name: str, 
-                          classifier=None, 
+                          classifier, 
                           do_careful_checks: bool=False) -> pd.DataFrame:
     """Evaluate performance for each perturbation.
 
@@ -573,14 +578,14 @@ def evaluate_across_perts(expression: anndata.AnnData,
         predictedExpression (anndata.AnnData): predicted expression, log1p-scale
         baseline (anndata.AnnData): baseline expression, log1p-scale
         experiment_name (str): name of the experiment
-        classifier (optional): Optional sklearn classifier to judge results by cell type label instead of logfc
+        classifier (optional): None or sklearn classifier to judge results by cell type label instead of logfc
         do_careful_checks (bool, optional): ensure that perturbation and dose match between observed
             and predicted expression. Defaults to False.
 
     Returns:
         pd.DataFrame: _description_
     """
-    perts = predictedExpression.obs.index
+    perts = predictedExpression.obs["perturbation"].unique()
     predictedExpression = predictedExpression.to_memory()
     if do_careful_checks:
         elap = "expression_level_after_perturbation"
@@ -594,12 +599,12 @@ def evaluate_across_perts(expression: anndata.AnnData,
         ):
             raise ValueError(f"Expression and predicted expression are different sizes or are differently named in experiment {experiment_name}.")
     results = Parallel(n_jobs=cpu_count())(
-        delayed(evaluate_per_pert)(i, pert, expression.X, predictedExpression.X, baseline, classifier) 
-        for i,pert in enumerate(perts)
+        delayed(evaluate_per_pert)(pert, expression.obs["perturbation"], expression.X, predictedExpression.X, baseline, classifier) 
+        for pert in perts
     )
     metrics_per_pert = pd.DataFrame(results, columns=["pert", "metrics"]).set_index("pert")
     metrics_per_pert = pd.DataFrame(metrics_per_pert["metrics"].tolist(), index=metrics_per_pert.index, columns=[
-        "spearman", "spearmanp", "cell_fate_correct", 
+        "spearman", "spearmanp", "cell_type_correct", 
         "mse_top_20", "mse_top_100", "mse_top_200",
         "mse", "mae", "proportion_correct_direction"
     ])
@@ -612,7 +617,7 @@ def evaluateOnePrediction(
     outputs,
     experiment_name: str,
     doPlots=False, 
-    classifier = None, 
+    classifier=None, 
     do_careful_checks = True):
     '''Compare observed against predicted, for expression, fold-change, or cell type.
 
@@ -628,7 +633,7 @@ def evaluateOnePrediction(
                         control expression level (log-scale)
                     outputs (str): Folder to save output in
                     classifier (sklearn logistic regression classifier): 
-                        optional machine learning classifier to assign cell fate. 
+                        machine learning classifier to assign cell type to predicted expression profiles. 
                         Must have a predict() method capable of taking a value from expression or predictedExpression and returning a single class label. 
                     doPlots (bool): Make a scatterplot showing observed vs predicted, one dot per gene. 
                     do_careful_checks (bool): check gene name and expression level associated with each perturbation.
@@ -659,8 +664,9 @@ def evaluateOnePrediction(
         is_hardest = hardest==pert
         is_easiest = easiest==pert
         if doPlots | is_hardest | is_easiest:
-            observed  = safe_squeeze(expression[         pert,:].X)
-            predicted = safe_squeeze(predictedExpression[pert,:].X)
+            i = expression.obs["perturbation"]==pert
+            observed  = safe_squeeze(expression[         i,:].X.mean(axis=0))
+            predicted = safe_squeeze(predictedExpression[i,:].X.mean(axis=0))
             os.makedirs(perturbation_plot_path, exist_ok = True)
             diagonal = alt.Chart(
                 pd.DataFrame({
