@@ -632,7 +632,7 @@ def evaluateOnePrediction(
                     baseline (AnnData): 
                         control expression level (log-scale)
                     outputs (str): Folder to save output in
-                    classifier (sklearn logistic regression classifier): 
+                    classifier (sklearn classifier): 
                         machine learning classifier to assign cell type to predicted expression profiles. 
                         Must have a predict() method capable of taking a value from expression or predictedExpression and returning a single class label. 
                     doPlots (bool): Make a scatterplot showing observed vs predicted, one dot per gene. 

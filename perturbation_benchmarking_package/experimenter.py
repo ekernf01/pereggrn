@@ -656,26 +656,27 @@ def averageWithinPerturbation(ad: anndata.AnnData, confounders = []):
     return new_ad
 
 def train_classifier(adata: anndata.AnnData, target_key: str = None):
-    """Train a random forest classifier to predict the target key (by default, "cell_type" or "louvain")
+    """Train a random forest classifier to predict the target key. By default, it looks for "louvain".
 
     Args:
         adata (anndata.AnnData): perturbation transcriptomics data conforming to the expectations enforced by load_perturbations.check_perturbation_dataset(). 
         target_key (str, optional): Column of adata.obs to use as labels. Defaults to None.
 
+    Errors:
+        AssertionError if target_key is not found as a column in adata.obs
+    
     Returns:
-        None or a scikit learn random forest classifier.
+        None (if 'louvain' is not found) or a scikit learn random forest classifier.
     """
     assert target_key is None or target_key in adata.obs.columns, f"The column {target_key} was not found in the sample metadata, so the classifier could not be trained."
     if target_key is None:
-        if "cell_type" in adata.obs.keys():
-            target_key = "cell_type"
-        elif "louvain" in adata.uns.keys():
+        if "louvain" in adata.obs.columns:
             target_key = "louvain"
         else:
             return None
     X = adata.X
     y = adata.obs[target_key]
-    model = RandomForestClassifier(n_estimators=100, random_state=0,    )
+    model = RandomForestClassifier(n_estimators=100, random_state=0)
     model.fit(X, y)
     return model
 
