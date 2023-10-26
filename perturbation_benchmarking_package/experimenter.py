@@ -465,22 +465,28 @@ def splitDataWrapper(
     type_of_split: str = "interventional" ,
     data_split_seed: int = None,
     verbose: bool = True,
+    custom_test_set: set = None,
 ) -> tuple:
     """Split the data into train and test.
 
     Args:
-        networks (dict): dict containing LightNetwork objects from the load_networks module. Used to restrict what is allowed in the test set.
-        perturbed_expression_data (anndata.AnnData): expression dataset to split
-        desired_heldout_fraction (float): number between 0 and 1. fraction in test set.
-        allowed_regulators_vs_network_regulators (str, optional): "all", "union", or "intersection".
-            If "all", then anything can go in the test set.
-            If "union", then genes must be in at least one of the provided networks to go in the test set.
-            If "intersection", then genes must be in all of the provided networks to go in the test set.
-            Defaults to "all".
-        type_of_split (str, optional): "simple" (simple random split) or "interventional" (restrictions 
-            on test set such as no overlap with trainset). Defaults to "interventional".
-        data_split_seed (int, optional): random seed. Defaults to None.
-        verbose (bool, optional): print split sizes?
+        - networks (dict): dict containing LightNetwork objects from the load_networks module. Used to restrict what is allowed in the test set.
+        - perturbed_expression_data (anndata.AnnData): expression dataset to split
+        - desired_heldout_fraction (float): number between 0 and 1. fraction in test set.
+        - allowed_regulators_vs_network_regulators (str, optional): "all", "union", or "intersection".
+            - If "all" (default), then anything can go in the test set.
+            - If "union", then genes must be in at least one of the provided networks to go in the test set.
+            - If "intersection", then genes must be in all of the provided networks to go in the test set.
+        - type_of_split (str): 
+            - if "interventional" (default), then any perturbation is placed in either the training or the test set, but not both. 
+            - If "simple", then we use a simple random split, and replicates of the same perturbation are allowed to go into different folds.
+            - If type_of_split=="genetic_interaction", we put single perturbations and controls in the training set, and multiple perturbations in the test set.
+            - If type_of_split=="demultiplexing", we put multiple perturbations and controls in the training set, and single perturbations in the test set.
+            - If type_of_split=="stratified", we put some samples from each perturbation in the training set, and if there is replication, we put some in the test set. 
+            - If type_of_split=="custom", we use custom_test_set as the test set.
+        - data_split_seed (int, optional): random seed. Defaults to None.
+        - verbose (bool, optional): print split sizes?
+        - custom_test_set: subset of perturbed_expression_data.obs_names. 
 
     Returns:
         tuple of anndata objects: train, test
@@ -501,6 +507,9 @@ def splitDataWrapper(
     else:
         raise ValueError(f"allowedRegulators currently only allows 'union' or 'all' or 'intersection'; got {allowedRegulators}")
     
+    if custom_test_set is not None:
+        assert type_of_split=="custom", "custom_test_set must be None unless type_of_split=='custom'."
+
     perturbed_expression_data_train, perturbed_expression_data_heldout = \
         _splitDataHelper(
             perturbed_expression_data, 
@@ -509,6 +518,7 @@ def splitDataWrapper(
             type_of_split            = type_of_split,
             data_split_seed = data_split_seed,
             verbose = verbose,
+            custom_test_set = custom_test_set,
         )
     return perturbed_expression_data_train, perturbed_expression_data_heldout
 
@@ -517,7 +527,8 @@ def _splitDataHelper(adata: anndata.AnnData,
                      desired_heldout_fraction: float, 
                      type_of_split: str, 
                      data_split_seed: int, 
-                     verbose: bool):
+                     verbose: bool, 
+                     custom_test_set: set):
     """Determine a train-test split satisfying constraints imposed by base networks and available data.
 
     parameters:
@@ -530,8 +541,10 @@ def _splitDataHelper(adata: anndata.AnnData,
         - If type_of_split=="genetic_interaction", we put single perturbations and controls in the training set, and multiple perturbations in the test set.
         - If type_of_split=="demultiplexing", we put multiple perturbations and controls in the training set, and single perturbations in the test set.
         - If type_of_split=="stratified", we put some samples from each perturbation in the training set, and if there is replication, we put some in the test set. 
+        - If type_of_split=="custom", we use custom_test_set as the test set.
     - data_split_seed (int): Used to seed the RNG. This function is deterministic and you must alter the data_split_seed if you want different random splits. 
     - verbose (bool): print train and test sizes?
+    - custom_test_set: subset of perturbed_expression_data.obs_names, as a Python set. 
 
     Details: 
 
@@ -629,8 +642,11 @@ def _splitDataHelper(adata: anndata.AnnData,
             test_samples = test_samples + list(set(samples_this_pert).difference(train_samples_this_pert))
         adata_train   = adata[train_samples, ].copy()
         adata_heldout = adata[test_samples, ].copy()
+    elif type_of_split == "custom":
+        adata_train   = adata[list(set(adata.obs_names).difference(custom_test_set)), ].copy()
+        adata_heldout = adata[list(custom_test_set), ].copy()
     else:
-        raise ValueError(f"`type_of_split` must be one of ['simple', 'interventional', 'genetic_interaction', 'demultiplexing', 'stratified']; got {type_of_split}.")
+        raise ValueError(f"`type_of_split` must be one of ['simple', 'interventional', 'genetic_interaction', 'demultiplexing', 'stratified', 'custom']; got {type_of_split}.")
     
     trainingSetPerturbations = set(  adata_train.obs["perturbation"].unique())
     testSetPerturbations     = set(adata_heldout.obs["perturbation"].unique())

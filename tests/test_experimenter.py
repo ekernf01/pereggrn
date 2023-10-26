@@ -5,19 +5,20 @@ import numpy as np
 load_perturbations.set_data_path("../perturbation_data/perturbations")
 adata = load_perturbations.load_perturbation("norman")
 adata = adata[:, adata.uns["perturbed_and_measured_genes"]] # slim it down to speed this up
-adata.obs["perturbation"]
 
 class TestDataSplit(unittest.TestCase):
-
     def test_splitDataWrapper(self):
-        for type_of_split in [ 'stratified', 'simple', 'interventional', 'genetic_interaction', 'demultiplexing']:
+        for type_of_split in [ 'custom', 'stratified', 'simple', 'interventional', 'genetic_interaction', 'demultiplexing' ]:
             print(f"Testing type_of_split={type_of_split}")
-            train,   test = experimenter.splitDataWrapper(adata, 0.5, [], type_of_split = type_of_split, verbose = False)
-            train2, test2 = experimenter.splitDataWrapper(adata, 0.5, [], type_of_split = type_of_split, verbose = False)
-            assert 0==len(set(train.obs.index).intersection(test.obs.index)), "Train and test set should not have any samples in common."
+            custom_test_set = set(adata.obs_names[0:1000]) if type_of_split == "custom" else None
+            train,   test = experimenter.splitDataWrapper(adata, 0.5, [], type_of_split = type_of_split, verbose = False, custom_test_set = custom_test_set)
+            train2, test2 = experimenter.splitDataWrapper(adata, 0.5, [], type_of_split = type_of_split, verbose = False, custom_test_set = custom_test_set)
+            assert len(set(train.obs.index).intersection(test.obs.index))==0, "Train and test set should not have any samples in common."
             assert adata.n_obs==len(set(train.obs.index).union(test.obs.index)), "Train and test set should together contain all samples"
             assert all( train.obs_names == train2.obs_names ), "Results should be exactly repeatable"
             assert all( test.obs_names   == test2.obs_names ), "Results should be exactly repeatable"
+            if type_of_split == "custom":
+                assert all(np.sort(list(custom_test_set)) == np.sort(list(test.obs_names))), "Test set should match the provided custom set."
             if type_of_split == "interventional":
                 assert 0==len(set(train.obs["perturbation"]).intersection(set(test.obs["perturbation"]))), "Train and test set should not have any perturbations in common."
             if type_of_split == "stratified":
