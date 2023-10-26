@@ -2,17 +2,22 @@ import unittest
 import perturbation_benchmarking_package.experimenter as experimenter
 import load_perturbations
 import numpy as np
+import json
+import os
 load_perturbations.set_data_path("../perturbation_data/perturbations")
 adata = load_perturbations.load_perturbation("norman")
 adata = adata[:, adata.uns["perturbed_and_measured_genes"]] # slim it down to speed this up
+custom_test_set = set(adata.obs_names[0:1000])
+os.makedirs("custom_test_sets", exist_ok=True)
+with open("custom_test_sets/0.json", "w") as f:
+    json.dump(list(custom_test_set), f)
 
 class TestDataSplit(unittest.TestCase):
     def test_splitDataWrapper(self):
         for type_of_split in [ 'custom', 'stratified', 'simple', 'interventional', 'genetic_interaction', 'demultiplexing' ]:
             print(f"Testing type_of_split={type_of_split}")
-            custom_test_set = set(adata.obs_names[0:1000]) if type_of_split == "custom" else None
-            train,   test = experimenter.splitDataWrapper(adata, 0.5, [], type_of_split = type_of_split, verbose = False, custom_test_set = custom_test_set)
-            train2, test2 = experimenter.splitDataWrapper(adata, 0.5, [], type_of_split = type_of_split, verbose = False, custom_test_set = custom_test_set)
+            train,   test = experimenter.splitDataWrapper(adata, 0.5, [], type_of_split = type_of_split, verbose = False)
+            train2, test2 = experimenter.splitDataWrapper(adata, 0.5, [], type_of_split = type_of_split, verbose = False)
             assert len(set(train.obs.index).intersection(test.obs.index))==0, "Train and test set should not have any samples in common."
             assert adata.n_obs==len(set(train.obs.index).union(test.obs.index)), "Train and test set should together contain all samples"
             assert all( train.obs_names == train2.obs_names ), "Results should be exactly repeatable"

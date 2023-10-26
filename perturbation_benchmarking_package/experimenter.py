@@ -457,6 +457,27 @@ def doSplitsMatch(
             return False
     return True
 
+def load_custom_test_set(type_of_split, data_split_seed) -> set:
+    """Retrieve a custom test set from a user-provided file.
+
+    Args:
+        type_of_split: unless this is "custom", this function returns None.
+        data_split_seed: the test set is expected to be stored in a file 'custom_test_sets/<data_split_seed>.json'.
+
+    Returns:
+        set: Custom test set
+    """
+    if type_of_split != 'custom':
+        return None
+    custom_split_file = os.path.join("custom_test_sets", f"{data_split_seed}.json")
+    try:
+        with open(custom_split_file, 'r') as f:
+            test_set = set(json.load(f))
+    except Exception as e:
+        raise Exception(f"Test data must be a JSON list in the file {custom_split_file}. Encountered error reading file: {repr(e)}")
+    assert type(test_set)==set, f"Test data must be a set in JSON format in the file {custom_split_file}. Got type ({type(test_set)})."
+    return test_set
+
 def splitDataWrapper(
     perturbed_expression_data: anndata.AnnData,
     desired_heldout_fraction: float, 
@@ -465,7 +486,6 @@ def splitDataWrapper(
     type_of_split: str = "interventional" ,
     data_split_seed: int = None,
     verbose: bool = True,
-    custom_test_set: set = None,
 ) -> tuple:
     """Split the data into train and test.
 
@@ -483,16 +503,18 @@ def splitDataWrapper(
             - If type_of_split=="genetic_interaction", we put single perturbations and controls in the training set, and multiple perturbations in the test set.
             - If type_of_split=="demultiplexing", we put multiple perturbations and controls in the training set, and single perturbations in the test set.
             - If type_of_split=="stratified", we put some samples from each perturbation in the training set, and if there is replication, we put some in the test set. 
-            - If type_of_split=="custom", we use custom_test_set as the test set.
-        - data_split_seed (int, optional): random seed. Defaults to None.
+            - If type_of_split=="custom", we load the test set from the file 'custom_test_sets/<data_split_seed>.json'.
+        - data_split_seed (int, optional): random seed. Defaults to 0, even if None is passed in. 
         - verbose (bool, optional): print split sizes?
-        - custom_test_set: subset of perturbed_expression_data.obs_names. 
 
     Returns:
         tuple of anndata objects: train, test
     """
+
     if data_split_seed is None:
         data_split_seed = 0
+
+    custom_test_set = load_custom_test_set(type_of_split, data_split_seed)
 
     # Allow test set to only have e.g. regulators present in at least one network
     allowedRegulators = set(perturbed_expression_data.var_names)
