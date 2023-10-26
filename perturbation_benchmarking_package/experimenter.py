@@ -625,11 +625,6 @@ def _splitDataHelper(adata: anndata.AnnData,
             trainingSetPerturbations = list(testSetIneligible) + list(excessTestEligible) 
         adata_train    = adata[adata.obs["perturbation"].isin(trainingSetPerturbations),:].copy()
         adata_heldout  = adata[adata.obs["perturbation"].isin(testSetPerturbations),    :].copy()
-        if verbose:
-            print("Test set num perturbations:")
-            print(len(testSetPerturbations))
-            print("Training set num perturbations:")
-            print(len(trainingSetPerturbations))    
     elif type_of_split == "simple":
         np.random.seed(data_split_seed)
         train_obs = np.random.choice(
@@ -637,15 +632,15 @@ def _splitDataHelper(adata: anndata.AnnData,
             a = adata.obs_names, 
             size = round(adata.shape[0]*(1-desired_heldout_fraction)), 
         )
-        test_obs = [i for i in adata.obs_names if i not in train_obs]
+        test_obs = np.sort(list(set(adata.obs_names).difference(train_obs)))
         adata_train    = adata[train_obs,:].copy()
         adata_heldout  = adata[test_obs,:].copy()
     elif type_of_split == "genetic_interaction":
         adata.obs["number_of_genes_perturbed"] = [1+p.count(",") for p in adata.obs["perturbation"]]
         adata.obs["number_of_genes_perturbed"] = adata.obs["number_of_genes_perturbed"]*(1-adata.obs["is_control_int"])
         assert any( adata.obs["number_of_genes_perturbed"] > 1), "No samples have multiple perturbations so we cannot study genetic interactions."
-        adata_train   = adata[adata.obs["number_of_genes_perturbed"]<=1,]
-        adata_heldout = adata[adata.obs["number_of_genes_perturbed"]> 1,]
+        adata_train   = adata[adata.obs["number_of_genes_perturbed"]<=1,].copy()
+        adata_heldout = adata[adata.obs["number_of_genes_perturbed"]> 1,].copy()
     elif type_of_split == "demultiplexing":
         adata.obs["number_of_genes_perturbed"] = [1+p.count(",") for p in adata.obs["perturbation"]]
         adata.obs["number_of_genes_perturbed"] = adata.obs["number_of_genes_perturbed"]*(1-adata.obs["is_control_int"])
@@ -676,12 +671,16 @@ def _splitDataHelper(adata: anndata.AnnData,
     adata_heldout.uns["perturbed_and_measured_genes"]     = set(adata_heldout.uns["perturbed_and_measured_genes"]).intersection(testSetPerturbations)
     adata_train.uns[  "perturbed_but_not_measured_genes"] = set(adata_train.uns[  "perturbed_but_not_measured_genes"]).intersection(trainingSetPerturbations)
     adata_heldout.uns["perturbed_but_not_measured_genes"] = set(adata_heldout.uns["perturbed_but_not_measured_genes"]).intersection(testSetPerturbations)
-
     if verbose:
-        print("Test set size:")
-        print(adata_heldout.n_obs)
-        print("Training set size:")
-        print(adata_train.n_obs)
+        print(
+            pd.DataFrame(
+                {
+                    "Num obs": [adata_train.n_obs, adata_heldout.n_obs],
+                    "Num perts": [len(trainingSetPerturbations), len(testSetPerturbations)],
+                }, 
+                index = ["Train", "Test"], 
+            )
+        )
     return adata_train, adata_heldout
 
 
