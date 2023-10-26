@@ -519,15 +519,29 @@ def _splitDataHelper(adata: anndata.AnnData,
                      data_split_seed: int, 
                      verbose: bool):
     """Determine a train-test split satisfying constraints imposed by base networks and available data.
-    
-    A few factors complicate the training-test split. 
+
+    parameters:
+
+    - adata (anndata.AnnData): Object satisfying the expectations outlined in the accompanying collection of perturbation data.
+    - allowedRegulators (list or set): interventions allowed to be in the test set. 
+    - type_of_split (str): 
+        - if "interventional" (default), then any perturbation is placed in either the training or the test set, but not both. 
+        - If "simple", then we use a simple random split, and replicates of the same perturbation are allowed to go into different folds.
+        - If type_of_split=="genetic_interaction", we put single perturbations and controls in the training set, and multiple perturbations in the test set.
+        - If type_of_split=="demultiplexing", we put multiple perturbations and controls in the training set, and single perturbations in the test set.
+        - If type_of_split=="stratified", we put some samples from each perturbation in the training set, and if there is replication, we put some in the test set. 
+    - data_split_seed (int): Used to seed the RNG. This function is deterministic and you must alter the data_split_seed if you want different random splits. 
+    - verbose (bool): print train and test sizes?
+
+    Details: 
+
+    A few factors complicate the "interventional" type of training-test split. 
 
     - Perturbed genes may be absent from most base GRN's due to lack of motif information or ChIP data. 
         These perhaps should be excluded from the test data to avoid obvious failure cases.
     - Perturbed genes may not be measured. These perhaps should be excluded from test data because we can't
         reasonably separate their direct vs indirect effects.
 
-    If type_of_split=="simple", we make no provision for dealing with the above concerns. 
     If type_of_split=="interventional", the `allowedRegulators` arg can be specified in order to keep any user-specified
     problem cases out of the test data. No matter what, we still use those perturbed profiles as training data, hoping 
     they will provide useful info about attainable cell states and downstream causal effects. But observations may only 
@@ -535,16 +549,12 @@ def _splitDataHelper(adata: anndata.AnnData,
 
     For some values of allowedRegulators (especially intersections of many prior networks), there are many factors 
     ineligible for use as test data -- so many that we don't have enough for the test set. In this case we issue a 
-    warning and assign as many as possible to test. For other cases, we have more flexibility, so we send some 
-    perturbations to the training set at random even if we would be able to use them in the test set.
+    warning and assign as many as possible to test. For other cases, we have more flexibility, so in order to achieve the 
+    train/test size specified by the user, we send some perturbations to the training set at random even if we would be able to 
+    use them in the test set.
 
-    parameters:
+    If type_of_split is not "interventional", we make no provision for dealing with the above concerns.
 
-    - adata (anndata.AnnData): Object satisfying the expectations outlined in the accompanying collection of perturbation data.
-    - allowedRegulators (list or set): interventions allowed to be in the test set. 
-    - type_of_split (str): if "interventional" (default), then any perturbation is placed in either the training or the test set, but not both. 
-        If "simple", then we use a simple random split, and replicates of the same perturbation are allowed to go into different folds.
-    - verbose (bool): print train and test sizes?
     """
     assert type(allowedRegulators) is list or type(allowedRegulators) is set, "allowedRegulators must be a list or set of allowed genes"
     if data_split_seed is None:
@@ -578,15 +588,8 @@ def _splitDataHelper(adata: anndata.AnnData,
                 replace = False)
             testSetPerturbations = [p for p in testSetEligible if p not in excessTestEligible]                      
             trainingSetPerturbations = list(testSetIneligible) + list(excessTestEligible) 
-        # Now that the random part is done, we can start using sets. Order may change but content won't. 
-        testSetPerturbations     = set(testSetPerturbations)
-        trainingSetPerturbations = set(trainingSetPerturbations)
-        adata_train    = adata[adata.obs["perturbation"].isin(trainingSetPerturbations),:]
-        adata_heldout  = adata[adata.obs["perturbation"].isin(testSetPerturbations),    :]
-        adata_train.uns[  "perturbed_and_measured_genes"]     = set(adata_train.uns[  "perturbed_and_measured_genes"]).intersection(trainingSetPerturbations)
-        adata_heldout.uns["perturbed_and_measured_genes"]     = set(adata_heldout.uns["perturbed_and_measured_genes"]).intersection(testSetPerturbations)
-        adata_train.uns[  "perturbed_but_not_measured_genes"] = set(adata_train.uns[  "perturbed_but_not_measured_genes"]).intersection(trainingSetPerturbations)
-        adata_heldout.uns["perturbed_but_not_measured_genes"] = set(adata_heldout.uns["perturbed_but_not_measured_genes"]).intersection(testSetPerturbations)
+        adata_train    = adata[adata.obs["perturbation"].isin(trainingSetPerturbations),:].copy()
+        adata_heldout  = adata[adata.obs["perturbation"].isin(testSetPerturbations),    :].copy()
         if verbose:
             print("Test set num perturbations:")
             print(len(testSetPerturbations))
@@ -600,18 +603,42 @@ def _splitDataHelper(adata: anndata.AnnData,
             size = round(adata.shape[0]*(1-desired_heldout_fraction)), 
         )
         test_obs = [i for i in adata.obs_names if i not in train_obs]
-        adata_train    = adata[train_obs,:]
-        adata_heldout  = adata[test_obs,:]
-        trainingSetPerturbations = set(  adata_train.obs["perturbation"].unique())
-        testSetPerturbations     = set(adata_heldout.obs["perturbation"].unique())
-        adata_train.uns[  "perturbed_and_measured_genes"]     = set(adata_train.uns[  "perturbed_and_measured_genes"]).intersection(trainingSetPerturbations)
-        adata_heldout.uns["perturbed_and_measured_genes"]     = set(adata_heldout.uns["perturbed_and_measured_genes"]).intersection(testSetPerturbations)
-        adata_train.uns[  "perturbed_but_not_measured_genes"] = set(adata_train.uns[  "perturbed_but_not_measured_genes"]).intersection(trainingSetPerturbations)
-        adata_heldout.uns["perturbed_but_not_measured_genes"] = set(adata_heldout.uns["perturbed_but_not_measured_genes"]).intersection(testSetPerturbations)
+        adata_train    = adata[train_obs,:].copy()
+        adata_heldout  = adata[test_obs,:].copy()
     elif type_of_split == "genetic_interaction":
-        raise NotImplementedError("Sorry, we are still working on this feature.")
+        adata.obs["number_of_genes_perturbed"] = [1+p.count(",") for p in adata.obs["perturbation"]]
+        adata.obs["number_of_genes_perturbed"] = adata.obs["number_of_genes_perturbed"]*(1-adata.obs["is_control_int"])
+        assert any( adata.obs["number_of_genes_perturbed"] > 1), "No samples have multiple perturbations so we cannot study genetic interactions."
+        adata_train   = adata[adata.obs["number_of_genes_perturbed"]<=1,]
+        adata_heldout = adata[adata.obs["number_of_genes_perturbed"]> 1,]
+    elif type_of_split == "demultiplexing":
+        adata.obs["number_of_genes_perturbed"] = [1+p.count(",") for p in adata.obs["perturbation"]]
+        adata.obs["number_of_genes_perturbed"] = adata.obs["number_of_genes_perturbed"]*(1-adata.obs["is_control_int"])
+        assert any( adata.obs["number_of_genes_perturbed"] > 1), "No samples have multiple perturbations so we cannot study demultiplexing."
+        assert any( adata.obs["number_of_genes_perturbed"] == 1), "No samples have just one perturbation so we cannot study demultiplexing."
+        adata_train   = adata[adata.obs["number_of_genes_perturbed"]!=1,].copy()
+        adata_heldout = adata[adata.obs["number_of_genes_perturbed"]==1,].copy()
+    elif type_of_split == "stratified":
+        test_samples = []
+        train_samples = []
+        for p in adata.obs["perturbation"].unique():
+            samples_this_pert = adata.obs.index[adata.obs["perturbation"]==p]
+            n_train = int(np.round(np.max([1, (1-desired_heldout_fraction)*len(samples_this_pert)])))
+            train_samples_this_pert = np.random.default_rng(seed=data_split_seed).choice(samples_this_pert, n_train)
+            train_samples = train_samples + list(train_samples_this_pert)
+            test_samples = test_samples + list(set(samples_this_pert).difference(train_samples_this_pert))
+        adata_train   = adata[train_samples, ].copy()
+        adata_heldout = adata[test_samples, ].copy()
     else:
-        raise ValueError(f"`type_of_split` must be 'simple' or 'interventional' or 'genetic_interaction'; got {type_of_split}.")
+        raise ValueError(f"`type_of_split` must be one of ['simple', 'interventional', 'genetic_interaction', 'demultiplexing', 'stratified']; got {type_of_split}.")
+    
+    trainingSetPerturbations = set(  adata_train.obs["perturbation"].unique())
+    testSetPerturbations     = set(adata_heldout.obs["perturbation"].unique())
+    adata_train.uns[  "perturbed_and_measured_genes"]     = set(adata_train.uns[  "perturbed_and_measured_genes"]).intersection(trainingSetPerturbations)
+    adata_heldout.uns["perturbed_and_measured_genes"]     = set(adata_heldout.uns["perturbed_and_measured_genes"]).intersection(testSetPerturbations)
+    adata_train.uns[  "perturbed_but_not_measured_genes"] = set(adata_train.uns[  "perturbed_but_not_measured_genes"]).intersection(trainingSetPerturbations)
+    adata_heldout.uns["perturbed_but_not_measured_genes"] = set(adata_heldout.uns["perturbed_but_not_measured_genes"]).intersection(testSetPerturbations)
+
     if verbose:
         print("Test set size:")
         print(adata_heldout.n_obs)
