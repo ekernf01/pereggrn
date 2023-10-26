@@ -38,7 +38,5 @@ class TestDataSplit(unittest.TestCase):
                 assert all([ic or (len(p.split(","))>1) for p,ic in zip(train.obs["perturbation"], train.obs["is_control"])]), "Train set should contain only multiple perturbations and controls."
                 assert all([1==len(p.split(",")) for p in test.obs["perturbation"]]),"Test set should contain only single perturbations."
 
-shutil.rmtree("custom_test_sets")
-
 if __name__ == '__main__':
     unittest.main()
