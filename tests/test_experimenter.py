@@ -8,24 +8,25 @@ import shutil
 load_perturbations.set_data_path("../perturbation_data/perturbations")
 adata = load_perturbations.load_perturbation("norman")
 adata = adata[:, adata.uns["perturbed_and_measured_genes"]] # slim it down to speed this up
-custom_test_set = set(adata.obs_names[0:1000])
-os.makedirs("custom_test_sets", exist_ok=True)
-with open("custom_test_sets/0.json", "w") as f:
-    json.dump(list(custom_test_set), f)
+
 
 class TestDataSplit(unittest.TestCase):
     def test_splitDataWrapper(self):
+        custom_test_set = set(adata.obs_names[0:1000])
+        os.makedirs("custom_test_sets", exist_ok=True)
+        with open("custom_test_sets/0.json", "w") as f:
+            json.dump(list(custom_test_set), f)
         for type_of_split in [ 'custom', 'stratified', 'simple', 'interventional', 'genetic_interaction', 'demultiplexing' ]:
             print(f"Testing type_of_split={type_of_split}")
             train,   test = experimenter.splitDataWrapper(adata, 0.5, [], type_of_split = type_of_split, verbose = True)
             train2, test2 = experimenter.splitDataWrapper(adata, 0.5, [], type_of_split = type_of_split, verbose = False)
             assert len(set(train.obs.index).intersection(test.obs.index))==0, "Train and test set should not have any samples in common."
-            assert adata.n_obs==len(set(train.obs.index).union(test.obs.index)), "Train and test set should together contain all samples"
+            assert all(np.sort(list(adata.obs_names))==np.sort(list(set(train.obs.index).union(test.obs.index)))), "Train and test set should together contain all samples"
             assert all( train.obs_names == train2.obs_names ), "Results should be exactly repeatable"
             assert all( test.obs_names   == test2.obs_names ), "Results should be exactly repeatable"
             assert test.n_obs>0, "Test set should not be empty."
             assert train.n_obs>0, "Train set should not be empty."
-            assert any(train.obs["is_control"]), "Train set should contain controls."
+            assert any(train.obs["is_control"]), "Train set should contain at least some controls."
             if type_of_split == "custom":
                 assert all(np.sort(list(custom_test_set)) == np.sort(list(test.obs_names))), "Test set should match the provided custom set."
             if type_of_split == "interventional":
@@ -38,6 +39,7 @@ class TestDataSplit(unittest.TestCase):
             if type_of_split == "demultiplexing":
                 assert all([ic or (len(p.split(","))>1) for p,ic in zip(train.obs["perturbation"], train.obs["is_control"])]), "Train set should contain only multiple perturbations and controls."
                 assert all([1==len(p.split(",")) for p in test.obs["perturbation"]]),"Test set should contain only single perturbations."
+        shutil.rmtree("custom_test_sets")
 
 if __name__ == '__main__':
     unittest.main()

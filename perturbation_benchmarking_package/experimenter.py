@@ -299,8 +299,10 @@ def do_one_run(
         low_dimensional_structure            = conditions.loc[i,"low_dimensional_structure"],
         low_dimensional_training             = conditions.loc[i,"low_dimensional_training"],
         prediction_timescale                 = conditions.loc[i,"prediction_timescale"],
-        kwargs                               = {k:simplify_type(conditions.loc[i,:])[k] if k in metadata["kwargs_to_expand"] else metadata["kwargs"][k] 
-                                                for k in metadata["kwargs"].keys()},
+        kwargs                               = {
+                                                k:simplify_type(conditions.loc[i,:])[k] if k in metadata["kwargs_to_expand"] else metadata["kwargs"][k] 
+                                                for k in metadata["kwargs"].keys()
+                                                },
     )
     return grn
 
@@ -656,7 +658,7 @@ def _splitDataHelper(adata: anndata.AnnData,
         for p in adata.obs["perturbation"].unique():
             samples_this_pert = adata.obs.index[adata.obs["perturbation"]==p]
             n_train = int(np.round(np.max([1, (1-desired_heldout_fraction)*len(samples_this_pert)])))
-            train_samples_this_pert = np.random.default_rng(seed=data_split_seed).choice(samples_this_pert, n_train)
+            train_samples_this_pert = np.random.default_rng(seed=data_split_seed).choice(samples_this_pert, n_train, replace = False)
             train_samples = train_samples + list(train_samples_this_pert)
             test_samples = test_samples + list(set(samples_this_pert).difference(train_samples_this_pert))
         adata_train   = adata[train_samples, ].copy()
