@@ -632,6 +632,8 @@ def _splitDataHelper(adata: anndata.AnnData,
             a = adata.obs_names, 
             size = round(adata.shape[0]*(1-desired_heldout_fraction)), 
         )
+        control_obs = set(adata.obs.loc[adata.obs["is_control"],:].index)
+        train_obs = np.sort(list(set(train_obs).union(control_obs)))
         test_obs = np.sort(list(set(adata.obs_names).difference(train_obs)))
         adata_train    = adata[train_obs,:].copy()
         adata_heldout  = adata[test_obs,:].copy()

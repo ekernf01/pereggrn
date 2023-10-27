@@ -25,6 +25,7 @@ class TestDataSplit(unittest.TestCase):
             assert all( test.obs_names   == test2.obs_names ), "Results should be exactly repeatable"
             assert test.n_obs>0, "Test set should not be empty."
             assert train.n_obs>0, "Train set should not be empty."
+            assert any(train.obs["is_control"]), "Train set should contain controls."
             if type_of_split == "custom":
                 assert all(np.sort(list(custom_test_set)) == np.sort(list(test.obs_names))), "Test set should match the provided custom set."
             if type_of_split == "interventional":
