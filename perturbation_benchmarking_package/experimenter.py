@@ -383,9 +383,10 @@ def filter_genes(expression_quantified: anndata.AnnData, num_genes: int, outputs
         raise Exception(f"num_genes must act like a number w.r.t. < operator; received {num_genes}.")
     
     gene_indices = np.union1d(targeted_genes, variable_genes)
-    gene_set = expression_quantified.var.index.values[gene_indices]
+    gene_set = expression_quantified.var.index[gene_indices]
     pd.DataFrame({"genes_modeled": gene_set}).to_csv(os.path.join(outputs, "genes_modeled.csv"))
-    return expression_quantified[:, list(gene_set)].copy()
+    e = expression_quantified[:, gene_set].copy()
+    return e
 
 
 def set_up_data_networks_conditions(metadata, amount_to_do, outputs):
