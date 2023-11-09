@@ -21,7 +21,7 @@ def makeMainPlots(
     facet_by: str = None, 
     color_by: str = None, 
     metrics = [
-        'spearman', 'mse', 'mae', 'mae_benefit',
+        'spearman', 'mse', 'mae',
         "mse_top_20", "mse_top_100", "mse_top_200",
     ]
     ):
@@ -108,31 +108,24 @@ def addGeneMetadata(df: pd.DataFrame,
         pd.DataFrame: df with additional columns describing evo conservation and network connectivity
     """
     # Measures derived from the test data, e.g. effect size
-    if genes_considered_as == "perturbations":
-        perturbation_characteristics = [
-        'fraction_missing',
-        'logFC',
-        'spearmanCorr',
-        'pearsonCorr',
-        'logFCNorm2',
-        ]
-        perturbation_characteristics_available = []
-        for x in perturbation_characteristics:
-            if x not in df.columns: 
-                if x in adata_test.obs.columns:
-                    perturbation_characteristics_available.append(x)
-                    # If this column is duplicated, it causes problems: pert_x pert_y etc. 
-                    df = df[[c for c in df.columns if c != "perturbation"]]
-                    df = pd.merge(
-                        adata_test.obs.loc[:,["perturbation", x]],
-                        df.copy(),
-                        how = "outer", # Will deal with missing info later
-                        left_on="perturbation", 
-                        right_on="gene")
-            else:
-                perturbation_characteristics_available.append(x)
-        perturbation_characteristics = perturbation_characteristics_available
-        
+    if genes_considered_as == "targets":
+        df["gene"] = df.index
+    else: # genes_considered_as == "perturbations"
+        df["gene"] = df["perturbation"]
+        perturbation_characteristics = {
+            'fraction_missing',
+            'logFC',
+            'spearmanCorr',
+            'pearsonCorr',
+            'logFCNorm2',
+        }.intersection(adata_test.obs.columns)
+        df = pd.merge(
+            adata_test.obs.loc[:,["perturbation"] + list(perturbation_characteristics)],
+            df.copy(),
+            how = "outer", # Will deal with missing info later
+            left_on="perturbation", 
+            right_on="gene"
+        )   
 
     # Measures derived from the training data, e.g. overdispersion
     expression_characteristics = [
@@ -206,112 +199,8 @@ def addGeneMetadata(df: pd.DataFrame,
     # Remove missing values from outer joins.
     # These are genes where we have various annotations, but they are not actually
     # perturbed or not actually measured on the test set.
-    df = df.loc[df["mae_benefit"].notnull(), :]
+    df = df.loc[df["mae"].notnull(), :]
     return df, types_of_gene_data
-
-def studyPredictableGenes(evaluationPerTarget: pd.DataFrame, 
-                          train_data: anndata.AnnData, 
-                          test_data: anndata.AnnData, 
-                          save_path: str, 
-                          factor_varied: str, 
-                          genes_considered_as: str) -> pd.DataFrame:
-    """Plot various factors against our per-gene measure of predictability 
-
-    Args:
-        evaluationPerTarget (pd.DataFrame):  Gene names and associated performance metrics
-        train_data (anndata.AnnData): training expression data
-        test_data (anndata.AnnData): test-set expression data
-        save_path (str): where to save the plots
-        factor_varied (str): what to use as the x axis in the plots
-        genes_considered_as (str): "targets" or "perturbations"
-
-    Returns:
-        pd.DataFrame: evaluation results
-    """
-    evaluationPerTarget, types_of_gene_data = addGeneMetadata(evaluationPerTarget, train_data, test_data, genes_considered_as)
-    types_of_gene_data["out-degree"] = [s for s in types_of_gene_data["degree_characteristics"] if "out-degree" in s]
-    types_of_gene_data["in-degree"]  = [s for s in types_of_gene_data["degree_characteristics"] if "in-degree" in s]
-    for t in types_of_gene_data.keys():
-        if len(types_of_gene_data[t])==0:
-            continue
-        print(f"Plotting prediction error by {t}")
-        long_data = pd.melt(
-            evaluationPerTarget, 
-            id_vars=[factor_varied, "mae_benefit"], 
-            value_vars=types_of_gene_data[t], 
-            var_name='property_of_gene', 
-            value_name='value', 
-            col_level=None, 
-            ignore_index=True)
-        long_data["value"] = [float(x) for x in long_data["value"]]
-        long_data = long_data.loc[long_data["value"].notnull(), :]
-        long_data = long_data.loc[long_data["mae_benefit"].notnull(), :]
-        if long_data.shape[0]==0:
-            print(f"No genes have info on {t}. Skipping.")
-            continue
-        long_data["value_binned"] = long_data.groupby(["property_of_gene", factor_varied])[["value"]].transform(lambda x: pd.cut(rank(x), bins=5))
-        long_data = long_data.groupby(["property_of_gene", factor_varied, "value_binned"]).agg('median').reset_index()
-        del long_data["value_binned"]
-        chart = alt.Chart(long_data).mark_point().encode(
-            x = "value:Q",
-            y = "mae_benefit:Q",
-            color=alt.Color(factor_varied, scale=alt.Scale(scheme='category20')),
-        )
-        chart = chart + chart.mark_line()
-        chart = chart.facet(
-            "property_of_gene", 
-            columns= 5,
-        ).resolve_scale(
-            x='independent'        
-        )
-        _ = alt.data_transformers.disable_max_rows()
-        os.makedirs(os.path.join(save_path, genes_considered_as), exist_ok=True)
-        try:
-            chart.save(os.path.join(save_path, genes_considered_as, f"predictability_vs_{t}.svg"))
-        except Exception as e:
-            chart.save(os.path.join(save_path, genes_considered_as, f"predictability_vs_{t}.html"))
-            print(f"Exception when saving predictability versus {t}: {repr(e)}. Is the chart empty?")
-
-    # How many genes are we just predicting a constant for?
-    if genes_considered_as == "targets":
-        cutoff = 0.01
-        for condition in evaluationPerTarget[factor_varied].unique():
-            subset = evaluationPerTarget.loc[evaluationPerTarget[factor_varied]==condition]
-            n_constant = (subset["standard_deviation"] < cutoff).sum()
-            n_total = subset.shape[0]  
-            chart = alt.Chart(subset).mark_bar().encode(
-                    x=alt.X("standard_deviation:Q", bin=alt.BinParams(maxbins=30), scale=alt.Scale(type="sqrt")),
-                    y=alt.Y('count()'),
-                ).properties(
-                    title=f'Standard deviation of predictions ({n_constant}/{n_total} are within {cutoff} of 0)'
-                )
-            _ = alt.data_transformers.disable_max_rows()
-            os.makedirs(os.path.join(save_path, genes_considered_as, "variety_in_predictions", f"{condition}"), exist_ok=True)
-            try:
-                chart.save( os.path.join(save_path, genes_considered_as, "variety_in_predictions", f"{condition}.svg"))
-            except Exception as e:
-                print(f"Saving svg failed with error {repr(e)}. Trying html, which may produce BIG-ASS files.")
-                chart.save( os.path.join(save_path, genes_considered_as, "variety_in_predictions", f"{condition}.html"))
-
-    # Gene set enrichments on best-predicted genes
-    for condition in evaluationPerTarget[factor_varied].unique():
-        os.makedirs(os.path.join(save_path, genes_considered_as, "enrichr_on_best", str(condition)), exist_ok=True)
-        gl = evaluationPerTarget.loc[evaluationPerTarget[factor_varied]==condition]
-        gl = list(gl.sort_values("mae_benefit", ascending=False).head(50)["gene"].unique())
-        pd.DataFrame(gl).to_csv(os.path.join(save_path, genes_considered_as, "enrichr_on_best", str(condition), "input_genes.txt"), index = False,  header=False)
-        for gene_sets in ['GO Molecular Function 2021', 'GO Biological Process 2021', 'Jensen TISSUES', 'ARCHS4 Tissues', 'Chromosome Location hg19']:
-            try:
-                _ = gseapy.enrichr(
-                    gene_list=gl,
-                    gene_sets=gene_sets.replace(" ", "_"), 
-                    outdir=os.path.join(save_path, genes_considered_as, "enrichr_on_best", str(condition), f"{gene_sets}"), 
-                    format='svg',
-                )
-            except Exception as e:
-                print(f"While running enrichr via gseapy, encountered error {repr(e)}.")
-                pass
-    evaluationPerTarget = evaluationPerTarget.loc[evaluationPerTarget["gene"].notnull(), :]
-    return evaluationPerTarget
 
 def plotOneTargetGene(gene: str, 
                       outputs: str, 
@@ -370,47 +259,18 @@ def plotOneTargetGene(gene: str,
 
 def postprocessEvaluations(evaluations: pd.DataFrame, 
                            conditions: pd.DataFrame)-> pd.DataFrame:
-    """Compare MAE for each observation to that of a a user-specified baseline method.
+    """Add condition metadata to eval results and fix formatting.
 
     Args:
         evaluations (pd.DataFrame): evaluation results for each test-set observation
         conditions (pd.DataFrame): metadata from conditions.csv
 
     Returns:
-        pd.DataFrame: evaluation results with additional columns 'mae_baseline' and 'mae_benefit'
+        pd.DataFrame: evaluation results with experimental conditions
     """
     evaluations   = pd.concat(evaluations)
     evaluations   = evaluations.merge(conditions,   how = "left", right_index = True, left_on = "index")
-    evaluations   = pd.DataFrame(evaluations.to_dict())
-    # Add some info on each evaluation-per-target, such as the baseline MAE
-    evaluations["target"] = [i[1] for i in evaluations.index]
-    baseline_conditions = set(evaluations["baseline_condition"].unique())
-    is_baseline = [i in baseline_conditions for i in evaluations["condition"]]
-    evaluations["mae_baseline"] = np.NaN
-    evaluations.loc[is_baseline, "mae_baseline"] = evaluations.loc[is_baseline, "mae"]
-    def fetch_baseline_mae(x):
-        try:
-            return x.loc[x["condition"] == x["baseline_condition"], "mae"].values[0]
-        except:
-            return np.NaN
-    for target in evaluations["target"].unique():
-        idx = evaluations.index[target == evaluations["target"]]
-        evaluations.loc[idx, "mae_baseline"] = fetch_baseline_mae(evaluations.loc[idx,:])
-    evaluations["mae_benefit"] = evaluations["mae_baseline"] - evaluations["mae"]
-    # Fix a bug with parquet not handling mixed-type columns
-    evaluations = evaluations.astype({'mae': float, 'mae_baseline': float, 'mae_benefit': float})
-
-    evaluations = evaluations.sort_values("mae_benefit", ascending=False)
-    # Sometimes these are processed by the same code downstream and it's convenient to have a "gene" column.
-    try:
-        evaluations["gene"] = evaluations["target"]
-    except KeyError:
-        pass
-    try:
-        evaluations["gene"] = evaluations["perturbation"]
-    except KeyError:
-        pass
-
+    evaluations   = pd.DataFrame(evaluations.to_dict()) # This cleans up weird data types
     return evaluations
 
 def evaluateCausalModel(
@@ -433,27 +293,24 @@ def evaluateCausalModel(
     """
     evaluationPerPert = {}
     evaluationPerTarget = {}
-
     evaluations  = []
     for i in predicted_expression.keys():
         perturbed_expression_data_train_i, perturbed_expression_data_heldout_i = get_current_data_split(i)
-        evaluations.append(
-            evaluateOnePrediction(
-                expression = perturbed_expression_data_heldout_i if is_test_set else perturbed_expression_data_train_i,
-                predictedExpression = predicted_expression[i],
-                baseline = perturbed_expression_data_train_i[[bool(b) for b in perturbed_expression_data_train_i.obs["is_control"]], :],
-                doPlots=do_scatterplots,
-                outputs = outputs,
-                experiment_name = i,
-                classifier=classifier,        
-            )
+        evaluations = evaluateOnePrediction(
+            expression = perturbed_expression_data_heldout_i if is_test_set else perturbed_expression_data_train_i,
+            predictedExpression = predicted_expression[i],
+            baseline = perturbed_expression_data_train_i[[bool(b) for b in perturbed_expression_data_train_i.obs["is_control"]], :],
+            doPlots=do_scatterplots,
+            outputs = outputs,
+            experiment_name = i,
+            classifier=classifier,        
         )
-    # That parallel code returns a list of tuples. I want a pair of dicts instead. 
-    for i,condition in enumerate(predicted_expression.keys()):
-        evaluationPerPert[condition], evaluationPerTarget[condition] = evaluations[i]
-        evaluationPerPert[condition]["index"]   = condition
-        evaluationPerTarget[condition]["index"] = condition
-    del evaluations
+        # Add detail on characteristics of each gene that might make it more predictable
+        evaluationPerPert[i],   _ = addGeneMetadata(evaluations[0], genes_considered_as="perturbations", adata=perturbed_expression_data_train_i, adata_test=perturbed_expression_data_heldout_i)
+        evaluationPerTarget[i], _ = addGeneMetadata(evaluations[1], genes_considered_as="targets"      , adata=perturbed_expression_data_train_i, adata_test=perturbed_expression_data_heldout_i)
+        evaluationPerPert[i]["index"]   = i
+        evaluationPerTarget[i]["index"] = i
+
     # Concatenate and add some extra info
     evaluationPerPert = postprocessEvaluations(evaluationPerPert, conditions)
     evaluationPerTarget = postprocessEvaluations(evaluationPerTarget, conditions)
@@ -654,7 +511,7 @@ def evaluateOnePrediction(
     baseline = baseline.X.mean(axis=0).squeeze()
     metrics_per_target = evaluate_across_targets(expression, predictedExpression)
     metrics = evaluate_across_perts(expression, predictedExpression, baseline, experiment_name, classifier, do_careful_checks)
-
+    
     print("\nMaking some example plots")
     metrics["spearman"] = metrics["spearman"].astype(float)
     hardest = metrics["spearman"].idxmin()

@@ -258,7 +258,7 @@ def do_one_run(
             raise ValueError("If you want to restrict to only TF's as regulators, provide a list to human_tfs.")
         eligible_regulators = human_tfs 
     elif conditions.loc[i,'eligible_regulators'] == "all":
-        eligible_regulators = None
+        eligible_regulators = None # This triggers the default of using all genes
     elif conditions.loc[i,'eligible_regulators'] == "perturbed_genes":
         eligible_regulators = set.union(
             set(train_data.uns["perturbed_and_measured_genes"]),
@@ -285,8 +285,6 @@ def do_one_run(
             dict
         """
         return json.loads(x.to_json())
-        
-        
     grn.fit(
         method                               = conditions.loc[i,"regression_method"], 
         cell_type_labels                     = None,
