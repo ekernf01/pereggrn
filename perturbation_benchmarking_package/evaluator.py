@@ -453,7 +453,7 @@ def evaluate_across_perts(expression: anndata.AnnData,
             predictedExpression.obs.loc[:, ["perturbation", elap]].fillna(0)
         ):
             raise ValueError(f"Expression and predicted expression are different sizes or are differently named in experiment {experiment_name}.")
-    with parallel_config(temp_folder='/tmp'):
+    with parallel_config(temp_folder='/tmp', backend='threading'):
         results = Parallel(n_jobs=cpu_count())(
             delayed(evaluate_per_pert)(pert, expression.obs["perturbation"], expression.X, predictedExpression.X, baseline, classifier) 
             for pert in perts
