@@ -1,16 +1,13 @@
 """evaluator.py is a collection of functions for testing predictions about expression fold change.
 """
 from joblib import Parallel, delayed, cpu_count
+from joblib.parallel import parallel_config
 import numpy as np
 import pandas as pd
 import anndata
 from scipy.stats import spearmanr as spearmanr
 from scipy.stats import rankdata as rank
 import os 
-try:
-    import gseapy
-except:
-    print("GSEAPY is unavailable; will skip some enrichment results.")
 import altair as alt
 
 def makeMainPlots(
@@ -369,7 +366,8 @@ def evaluate_across_targets(expression: anndata.AnnData, predictedExpression: an
     """
     targets = predictedExpression.var.index
     predictedExpression = predictedExpression.to_memory()
-    results = Parallel(n_jobs=cpu_count()-1)(delayed(evaluate_per_target)(i, target, expression.X, predictedExpression.X) for i,target in enumerate(targets))
+    with parallel_config(temp_folder='/tmp'):
+        results = Parallel(n_jobs=cpu_count()-1)(delayed(evaluate_per_target)(i, target, expression.X, predictedExpression.X) for i,target in enumerate(targets))
     metrics_per_target = pd.DataFrame(results, columns=["target", "standard_deviation", "mae", "mse"]).set_index("target")
     return metrics_per_target
 
