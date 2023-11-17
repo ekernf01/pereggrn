@@ -1,14 +1,46 @@
 import unittest
 import perturbation_benchmarking_package.experimenter as experimenter
 import load_perturbations
+import load_networks
 import numpy as np
 import json
 import os
 import shutil
-load_perturbations.set_data_path("../perturbation_data/perturbations")
+load_networks.set_grn_location("../../network_collection/networks")
+load_perturbations.set_data_path("../../perturbation_data/perturbations")
 adata = load_perturbations.load_perturbation("norman")
 adata = adata[:, adata.uns["perturbed_and_measured_genes"]] # slim it down to speed this up
 
+
+class TestMetadataExpand(unittest.TestCase):
+    def test_metadata_parsing(self):
+        metadata = {
+            "unique_id": "1.6.1_1",
+            "nickname": "dcdfg",
+            "readme": "Do DCD-FG and/or its variants beat simple baselines on their or our test data?",
+            "question": "1.6",
+            "is_active": True,
+            "facet_by": "starting_expression",
+            "color_by": None,
+            "factor_varied": "regression_method",
+            "regression_method":[
+                "mean", 
+                "median"
+            ],
+            "baseline_condition": 0,
+            "merge_replicates": False,
+            "perturbation_dataset": "frangieh_IFNγ_v1",
+            "num_genes": 1000,
+            "starting_expression": ["control", "heldout"],
+            "network_datasets": {
+                "empty":{}
+            }
+        }
+        metadata = experimenter.validate_metadata(metadata=metadata)
+        conditions = experimenter.lay_out_runs( metadata = metadata, networks = {"empty": load_networks.get_subnets("empty")} )
+        assert conditions.shape[0] == 4
+        conditions = experimenter.lay_out_runs( metadata = metadata|{"expand":"ladder"}, networks = {"empty": load_networks.get_subnets("empty")} )
+        assert conditions.shape[0] == 2
 
 class TestDataSplit(unittest.TestCase):
     def test_splitDataWrapper(self):
@@ -43,3 +75,25 @@ class TestDataSplit(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+# # If we ever want to achieve 100% test coverage, here's all the functions; good luck!
+# get_required_keys
+# get_optional_keys
+# get_default_metadata
+# validate_metadata
+# lay_out_runs
+# do_one_run
+# simplify_type
+# get_subnets
+# filter_genes
+# set_up_data_networks_conditions
+# doSplitsMatch
+# load_custom_test_set
+# splitDataWrapper
+# _splitDataHelper
+# averageWithinPerturbation
+# train_classifier
+# downsample
+# safe_save_adata
+# load_successful_conditions
+# has_predictions

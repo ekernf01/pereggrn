@@ -63,6 +63,7 @@ def get_optional_keys():
         "data_split_seed",
         "starting_expression",
         "control_subtype",
+        "expand",
         "kwargs_to_expand",
         "kwargs"
     )
@@ -85,6 +86,7 @@ def get_default_metadata():
         "control_subtype": None,
         "kwargs": dict(),
         "kwargs_to_expand": [],
+        "expand": "grid",
         "data_split_seed": 0,
         "baseline_condition": 0,
         "num_genes": 10000,
@@ -99,24 +101,29 @@ def get_default_metadata():
     }
 
 def validate_metadata(
-    experiment_name: str, 
-    permissive: bool = False
+    experiment_name: str = None,
+    metadata: dict = None,
 ) -> OrderedDict:
     """Make sure the user-provided metadata is OK, and fill in missing info with defaults.
 
     Args:
         experiment_name (str): name of an Experiment (a folder in the experiments folder)
-        permissive (bool, optional): If true, allow running inactive experiments. Defaults to False.
+        metadata (dict): Experiment metadata. 
 
     Returns:
         OrderedDict: Experiment metadata
     """
-    with open(os.path.join("experiments", experiment_name, "metadata.json")) as f:
-        metadata = json.load(f, object_pairs_hook=OrderedDict)
-    if (not permissive) and ("is_active" in metadata.keys()) and (not metadata["is_active"]):
+    assert experiment_name is None or metadata is None, "You must provide experiment_name or metadata, but not both."
+    if experiment_name is not None:
+        with open(os.path.join("experiments", experiment_name, "metadata.json")) as f:
+            metadata = json.load(f, object_pairs_hook=OrderedDict)
+        print("\n\nRaw metadata for experiment " + experiment_name + ":\n")
+        print(yaml.dump(metadata))
+        assert experiment_name == metadata["unique_id"], "Experiment is labeled right"
+
+    metadata = OrderedDict(metadata)
+    if ("is_active" in metadata.keys()) and (not metadata["is_active"]):
         raise ValueError("This experiment is marked as inactive. If you really want to run it, edit its metadata.json.")
-    print("\n\nRaw metadata for experiment " + experiment_name + ":\n")
-    print(yaml.dump(metadata))
 
     # If metadata refers to another experiment, go find missing metadata there.
     if "refers_to" in metadata.keys():
@@ -154,15 +161,13 @@ def validate_metadata(
     assert len(extra)==0,   f"Metadata has some unwanted keys: {' '.join(extra)}"
     
     # Check a few of the values
-    assert experiment_name == metadata["unique_id"], "Experiment is labeled right"
     for k in metadata["kwargs_to_expand"]:
         assert k not in metadata, f"Key {k} names both an expandable kwarg and an Experiment metadata key. Sorry, but this is not allowed. See get_default_metadata() and get_required_keys() for names of keys reserved for the benchmarking code."
-    if not permissive:
-        assert metadata["perturbation_dataset"] in set(load_perturbations.load_perturbation_metadata().query("is_ready=='yes'")["name"]), "Cannot find perturbation data under that name. Try load_perturbations.load_perturbation_metadata()."
-        for netName in metadata["network_datasets"].keys():
-            assert netName in set(load_networks.load_grn_metadata()["name"]).union({"dense", "empty"}) or "random" in netName, "Networks exist as named"
-            assert "subnets" in metadata["network_datasets"][netName].keys(), "Optional metadata fields filled correctly"
-            assert "do_aggregate_subnets" in metadata["network_datasets"][netName].keys(), "Optional metadata fields filled correctly"
+    assert metadata["perturbation_dataset"] in set(load_perturbations.load_perturbation_metadata().query("is_ready=='yes'")["name"]), "Cannot find perturbation data under that name. Try load_perturbations.load_perturbation_metadata()."
+    for netName in metadata["network_datasets"].keys():
+        assert netName in set(load_networks.load_grn_metadata()["name"]).union({"dense", "empty"}) or "random" in netName, "Networks exist as named"
+        assert "subnets" in metadata["network_datasets"][netName].keys(), "Optional metadata fields filled correctly"
+        assert "do_aggregate_subnets" in metadata["network_datasets"][netName].keys(), "Optional metadata fields filled correctly"
 
     print("\nFully parsed metadata:\n")
     print(yaml.dump(metadata))
@@ -211,19 +216,33 @@ def lay_out_runs(
     del metadata["kwargs_to_expand"]
     for k in kwargs_to_expand:
         metadata[k] = kwargs[k]
-    # ==== Done preparing for cartesian product ====
-
-    # Wrap each singleton in a list. Otherwise product() will split strings.
+    
+    # Wrap each singleton in a list. Otherwise product() and len() will misbehave on strings.
     for k in metadata.keys():
         if type(metadata[k]) != list:
             metadata[k] = [metadata[k]]
-    # Make all combos 
-    conditions =  pd.DataFrame(
-        [row for row in product(*metadata.values())], 
-        columns=metadata.keys()
-    )
-    # Downstream of this, the dense network is stored as an empty network to save space.
-    # Recommended usage is to set network_prior="ignore", otherwise the empty network will be taken literally. 
+
+    # ==== Done preparing for expansion ====
+    if metadata["expand"][0]=="grid":
+        del metadata["expand"]
+        # Make all combos 
+        conditions =  pd.DataFrame(
+            [row for row in product(*metadata.values())], 
+            columns=metadata.keys()
+        )
+    elif metadata["expand"][0]=="ladder":
+        del metadata["expand"]
+        all_lengths = {k:len(v) for k,v in metadata.items()}
+        num_conditions = int(np.max(list(all_lengths.values())))
+        assert all( [l in (1, num_conditions) for l in all_lengths.values()] ), f"When 'expand' is 'ladder', length must be 1 or the max for all metadata entries. All lengths: {all_lengths}"
+        metadata = {k:(v*num_conditions if all_lengths[k]==1 else v) 
+                    for k,v in metadata.items()}
+        conditions =  pd.DataFrame(metadata)
+    else:
+        raise ValueError(f"'expand' must be 'grid' or 'ladder'; got {metadata['expand']}")
+    
+    # Downstream of this, the dense network is stored as an empty network instead of a list of all edges (to save space).
+    # Recommended usage is to set network_prior="ignore"; otherwise the empty network will be taken literally. 
     for i in conditions.index:
         conditions.loc[i, "network_prior"] = \
         "ignore" if conditions.loc[i, "network_datasets"] == "dense" else conditions.loc[i, "network_prior"]
@@ -304,51 +323,6 @@ def do_one_run(
     )
     return grn
 
-def get_subnets(netName:str, subnets:list, target_genes = None, do_aggregate_subnets = False) -> dict:
-    """Get gene regulatory networks for an experiment.
-
-    Args:
-        netName (str): Name of network to pull from collection, or "dense" or e.g. "random0.123" for random with density 12.3%. 
-        subnets (list, optional): List of cell type- or tissue-specific subnetworks to include. 
-        do_aggregate_subnets (bool, optional): If True, return has just one network named netName. If False,
-            then returned dict has many separate networks named like netName + " " + subnet_name.
-
-    Returns:
-        dict: A dict containing base GRN's as LightNetwork objects (see the docs in the load_networks module in the networks collection.)
-    """
-    print("Getting network '" + netName + "'")
-    gc.collect()
-    if "random" in netName:
-        networks = { 
-            netName: load_networks.LightNetwork(
-                df = evaluator.pivotNetworkWideToLong( 
-                    load_networks.makeRandomNetwork( target_genes = target_genes, density = float( netName[6:] ) ) 
-                ) 
-            )
-        }
-    elif "empty" == netName or "dense" == netName:
-        networks = { 
-            netName: load_networks.LightNetwork(df=pd.DataFrame(index=[], columns=["regulator", "target", "weight"]))
-        }
-        if "dense"==netName:
-            print("WARNING: for 'dense' network, returning an empty network. In GRN.fit(), use network_prior='ignore'. ")
-    else:            
-        networks = {}
-        if do_aggregate_subnets:
-            new_key = netName 
-            if subnets[0]=="all":
-                networks[new_key] = load_networks.LightNetwork(netName)
-            else:
-                networks[new_key] = load_networks.LightNetwork(netName, subnets)
-        else:
-            for subnet_name in subnets:
-                new_key = netName + " " + subnet_name
-                if subnets[0]=="all":
-                    networks[new_key] = load_networks.LightNetwork(netName)
-                else:
-                    networks[new_key] = load_networks.LightNetwork(netName, [subnet_name])
-    return networks
-
 def filter_genes(expression_quantified: anndata.AnnData, num_genes: int, outputs: str) -> anndata.AnnData:
     """Filter a dataset, keeping only the top-ranked genes and the directly perturbed genes.
     The top N and perturbed genes may intersect, resulting in less than num_genes returned.
@@ -407,7 +381,7 @@ def set_up_data_networks_conditions(metadata, amount_to_do, outputs):
     # Get networks
     networks = {}
     for netName in list(metadata["network_datasets"].keys()):
-        networks = networks | get_subnets(
+        networks = networks | load_networks.get_subnets(
             netName, 
             subnets = metadata["network_datasets"][netName]["subnets"], 
             target_genes = perturbed_expression_data.var_names, 

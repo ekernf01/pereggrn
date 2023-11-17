@@ -7,17 +7,10 @@ import scanpy as sc
 import shutil
 
 # Deal with various modules specific to this project
-import importlib
-PROJECT_PATH = '/home/ekernf01/Desktop/jhu/research/projects/perturbation_prediction/cell_type_knowledge_transfer/'
-os.chdir(PROJECT_PATH + "perturbation_benchmarking/")
-sys.path.append(os.path.expanduser(PROJECT_PATH + 'perturbation_data/load_perturbations')) 
-sys.path.append(os.path.expanduser(PROJECT_PATH + 'perturbation_benchmarking/src')) 
-import evaluator
+from perturbation_benchmarking_package import evaluator
 import load_perturbations
-importlib.reload(evaluator) 
-importlib.reload(load_perturbations)
-os.environ["PERTURBATION_PATH"]  = PROJECT_PATH + "perturbation_data/perturbations"
-test_expression = sc.read_h5ad(os.environ["PERTURBATION_PATH"] + "/software_test/" + "test.h5ad")
+load_perturbations.set_data_path("../../perturbation_data/perturbations")
+test_expression = load_perturbations.load_perturbation("software_test")
 test_perturbations = pd.DataFrame(
                     [
                         ("AATF", 0.0), # no connections
@@ -61,3 +54,18 @@ class TestEvaluation(unittest.TestCase):
     
 if __name__ == '__main__':
     unittest.main()
+
+# # If we ever want to achieve 100% test coverage, here's all the functions; good luck!
+# makeMainPlots
+# addGeneMetadata
+# plotOneTargetGene
+# postprocessEvaluations
+# evaluateCausalModel
+# safe_squeeze
+# evaluate_per_target
+# evaluate_across_targets
+# evaluate_per_pert
+# is_constant
+# mse_top_n
+# evaluate_across_perts
+# evaluateOnePrediction
