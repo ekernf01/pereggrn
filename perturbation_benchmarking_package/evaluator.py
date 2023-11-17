@@ -9,6 +9,7 @@ from scipy.stats import spearmanr as spearmanr
 from scipy.stats import rankdata as rank
 import os 
 import altair as alt
+import perturbation_benchmarking_package.experimenter as experimenter
 
 def makeMainPlots(
     evaluationPerPert: pd.DataFrame, 
@@ -276,7 +277,7 @@ def evaluateCausalModel(
     is_test_set: bool,
     conditions: pd.DataFrame, 
     outputs: str, 
-    classifier, 
+    classifier_labels = None,
     do_scatterplots = True):
     """Compile plots and tables comparing heldout data and predictions for same. 
 
@@ -284,7 +285,6 @@ def evaluateCausalModel(
         get_current_data_split: function to retrieve tuple of anndatas (train, test)
         predicted_expression: dict with keys equal to the index in "conditions" and values being anndata objects. 
         is_test_set: True if the predicted_expression is on the test set and False if predicted_expression is on the training data.
-        classifier (sklearn.LogisticRegression): sklearn classifier or None, to judge results based on cell type accuracy. 
         conditions (pd.DataFrame): Metadata for the different combinations used in this experiment. 
         outputs (String): Saves output here.
     """
@@ -300,7 +300,7 @@ def evaluateCausalModel(
             doPlots=do_scatterplots,
             outputs = outputs,
             experiment_name = i,
-            classifier=classifier,        
+            classifier = experimenter.train_classifier(perturbed_expression_data_train_i, target_key = classifier_labels),
         )
         # Add detail on characteristics of each gene that might make it more predictable
         evaluationPerPert[i],   _ = addGeneMetadata(evaluations[0], genes_considered_as="perturbations", adata=perturbed_expression_data_train_i, adata_test=perturbed_expression_data_heldout_i)
