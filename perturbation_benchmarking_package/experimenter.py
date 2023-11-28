@@ -260,6 +260,7 @@ def do_one_run(
     outputs: str,
     metadata: dict, 
     human_tfs: list,
+    do_parallel: bool = True
     ) -> anndata.AnnData:
     """Do one run (fit a GRN model and make predictions) as part of this experiment.
 
@@ -316,6 +317,7 @@ def do_one_run(
         low_dimensional_structure            = conditions.loc[i,"low_dimensional_structure"],
         low_dimensional_training             = conditions.loc[i,"low_dimensional_training"],
         prediction_timescale                 = conditions.loc[i,"prediction_timescale"],
+        do_parallel = do_parallel,
         kwargs                               = {
                                                 k:simplify_type(conditions.loc[i,:])[k] if k in metadata["kwargs_to_expand"] else metadata["kwargs"][k] 
                                                 for k in metadata["kwargs"].keys()
