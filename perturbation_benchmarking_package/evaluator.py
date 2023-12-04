@@ -403,7 +403,8 @@ def evaluate_per_pert(pert: str,
         spearman, spearmanp = [x for x in spearmanr(observed - baseline, predicted - baseline)]
         mse = np.linalg.norm(observed - predicted)**2
         mae = np.abs(observed - predicted).mean()
-        proportion_correct_direction = np.mean((observed >= 0) == (predicted >= 0))
+        # proportion_correct_direction = np.mean((observed >= 0) == (predicted >= 0))
+        proportion_correct_direction = np.mean(np.sign(observed - baseline) == np.sign(predicted - baseline))
         cell_type_correct = np.nan
         if classifier is not None:
             class_observed = classifier.predict(np.reshape(observed, (1, -1)))[0]
