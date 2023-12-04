@@ -11,6 +11,20 @@ import os
 import altair as alt
 import perturbation_benchmarking_package.experimenter as experimenter
 
+METRICS = {
+    "mae":                          lambda predicted, observed, baseline: np.abs(observed - predicted).mean(),
+    "mse":                          lambda predicted, observed, baseline: np.linalg.norm(observed - predicted)**2,
+    "spearman":                     lambda predicted, observed, baseline: [x for x in spearmanr(observed - baseline, predicted - baseline)][0],
+    "proportion_correct_direction": lambda predicted, observed, baseline: np.mean(np.sign(observed - baseline) == np.sign(predicted - baseline)),
+    "mse_top_20":                   lambda predicted, observed, baseline: mse_top_n(predicted, observed, baseline, n=20),
+    "mse_top_100":                  lambda predicted, observed, baseline: mse_top_n(predicted, observed, baseline, n=100),
+    "mse_top_200":                  lambda predicted, observed, baseline: mse_top_n(predicted, observed, baseline, n=200),
+}
+
+def mse_top_n(predicted, observed, baseline, n):
+    top_n = rank(-np.abs(observed - baseline)) <= n
+    return np.linalg.norm(observed[top_n] - predicted[top_n]) ** 2
+
 def makeMainPlots(
     evaluationPerPert: pd.DataFrame, 
     evaluationPerTarget: pd.DataFrame, 
@@ -400,26 +414,13 @@ def evaluate_per_pert(pert: str,
     if type(predicted) is float and np.isnan(predicted) or is_constant(predicted - baseline) or is_constant(observed - baseline):
         return pert, [0, 1, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan]
     else:
-        spearman, spearmanp = [x for x in spearmanr(observed - baseline, predicted - baseline)]
-        mse = np.linalg.norm(observed - predicted)**2
-        mae = np.abs(observed - predicted).mean()
-        # proportion_correct_direction = np.mean((observed >= 0) == (predicted >= 0))
-        proportion_correct_direction = np.mean(np.sign(observed - baseline) == np.sign(predicted - baseline))
-        cell_type_correct = np.nan
+        results = {k:m(predicted, observed, baseline) for k,m in METRICS.items()}
+        results["cell_type_correct"] = np.nan
         if classifier is not None:
             class_observed = classifier.predict(np.reshape(observed, (1, -1)))[0]
             class_predicted = classifier.predict(np.reshape(predicted, (1, -1)))[0]
-            cell_type_correct = 1.0 * (class_observed == class_predicted)
-        # Some GEARS metrics from their extended data figure 1
-        def mse_top_n(n, p=predicted, o=observed):
-            top_n = rank(-np.abs(o)) <= n
-            return np.linalg.norm(o[top_n] - p[top_n]) ** 2
-        mse_top_20  = mse_top_n(n=20)
-        mse_top_100 = mse_top_n(n=100)
-        mse_top_200 = mse_top_n(n=200)
-        return pert, [spearman, spearmanp, cell_type_correct, 
-                        mse_top_20, mse_top_100, mse_top_200,
-                        mse, mae, proportion_correct_direction]
+            results["cell_type_correct"] = 1.0 * (class_observed == class_predicted)
+        return pd.DataFrame(results, index = [pert])
 
 def evaluate_across_perts(expression: anndata.AnnData, 
                           predictedExpression: anndata.AnnData, 
@@ -459,13 +460,7 @@ def evaluate_across_perts(expression: anndata.AnnData,
             delayed(evaluate_per_pert)(pert, expression.obs["perturbation"], expression.X, predictedExpression.X, baseline, classifier) 
             for pert in perts
         )
-    metrics_per_pert = pd.DataFrame(results, columns=["pert", "metrics"]).set_index("pert")
-    metrics_per_pert = pd.DataFrame(metrics_per_pert["metrics"].tolist(), index=metrics_per_pert.index, columns=[
-        "spearman", "spearmanp", "cell_type_correct", 
-        "mse_top_20", "mse_top_100", "mse_top_200",
-        "mse", "mae", "proportion_correct_direction"
-    ])
-    return metrics_per_pert
+    return pd.concat(results)
 
 def evaluateOnePrediction(
     expression: anndata.AnnData, 
