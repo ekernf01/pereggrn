@@ -460,7 +460,8 @@ def evaluate_across_perts(expression: anndata.AnnData,
             delayed(evaluate_per_pert)(pert, expression.obs["perturbation"], expression.X, predictedExpression.X, baseline, classifier) 
             for pert in perts
         )
-    return pd.concat(results)
+    results = pd.concat([r for r in results if type(r)==pd.DataFrame])
+    return results
 
 def evaluateOnePrediction(
     expression: anndata.AnnData, 

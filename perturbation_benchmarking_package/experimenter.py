@@ -287,6 +287,7 @@ def do_one_run(
     else:
         raise ValueError("'eligible_regulators' must be 'human_tfs' or 'perturbed_genes' or 'all'")
     train_data.obs["is_control"] = train_data.obs["is_control"].astype(bool)
+    print("Instantiating GRN object.")
     grn = ggrn.GRN(
         train                = train_data, 
         network              = networks[conditions.loc[i,'network_datasets']],
@@ -305,6 +306,7 @@ def do_one_run(
             dict
         """
         return json.loads(x.to_json())
+    print("Fitting models.")
     grn.fit(
         method                               = conditions.loc[i,"regression_method"], 
         cell_type_labels                     = None,
