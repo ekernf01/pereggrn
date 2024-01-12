@@ -103,12 +103,14 @@ def makeMainPlots(
             vlnplot[metric].save(f'{outputs}/{metric}.html')    
     return vlnplot
 
-def addGeneMetadata(df: pd.DataFrame, 
-                    adata: anndata.AnnData,
-                    adata_test: anndata.AnnData,
-                    genes_considered_as: str) -> pd.DataFrame:
+def addGeneMetadata(
+        df: pd.DataFrame, 
+        adata: anndata.AnnData,
+        adata_test: anndata.AnnData,
+        genes_considered_as: str,
+        path_to_accessory_data: str,
+    ) -> pd.DataFrame:
     """Add metadata related to evo conservation and network connectivity
-
 
     Args:
         df (pd.DataFrame): Gene names and associated performance metrics
@@ -154,7 +156,12 @@ def addGeneMetadata(df: pd.DataFrame,
             right_on="gene")
     # Proteoform diversity information is not yet used because it would be hard to summarize this into a numeric measure of complexity.
     # But this code may be useful if we aim to continue that work later on.
-    proteoform_diversity = pd.read_csv("../accessory_data/uniprot-compressed_true_download_true_fields_accession_2Cid_2Cprotei-2023.02.02-15.27.12.44.tsv.gz", sep = "\t")
+    proteoform_diversity = pd.read_csv(os.path.join(
+            path_to_accessory_data, 
+            "uniprot-compressed_true_download_true_fields_accession_2Cid_2Cprotei-2023.02.02-15.27.12.44.tsv.gz"
+        ), 
+        sep = "\t"
+    )
     proteoform_diversity.head()
     proteoform_diversity_summary = pd.DataFrame(
         {
@@ -167,7 +174,13 @@ def addGeneMetadata(df: pd.DataFrame,
 
     # measures of evolutionary constraint 
     evolutionary_characteristics = ["pLI"]
-    evolutionary_constraint = pd.read_csv("../accessory_data/forweb_cleaned_exac_r03_march16_z_data_pLI_CNV-final.txt.gz", sep = "\t")
+    evolutionary_constraint = pd.read_csv(os.path.join(
+            path_to_accessory_data, 
+            "forweb_cleaned_exac_r03_march16_z_data_pLI_CNV-final.txt.gz"
+        ), 
+        sep = "\t"
+    )
+
     evolutionary_constraint = evolutionary_constraint.groupby("gene").agg(func = max)
     if any(not x in df.columns for x in evolutionary_characteristics):
         df = pd.merge(
@@ -178,7 +191,11 @@ def addGeneMetadata(df: pd.DataFrame,
             right_on="gene")
     
     # measures of connectedness
-    degree = pd.read_csv("../accessory_data/degree_info.csv.gz")
+    degree = pd.read_csv(os.path.join(
+            path_to_accessory_data, 
+            "degree_info.csv.gz"
+        )
+    )
     degree = degree.rename({"Unnamed: 0":"gene"}, axis = 1)
     degree["gene"] = [str(g).upper() for g in degree["gene"]]
     degree = degree.pivot_table(
@@ -292,7 +309,9 @@ def evaluateCausalModel(
     conditions: pd.DataFrame, 
     outputs: str, 
     classifier_labels = None,
-    do_scatterplots = True):
+    do_scatterplots = True, 
+    path_to_accessory_data: str = "../accessory_data",
+):
     """Compile plots and tables comparing heldout data and predictions for same. 
 
     Args:
@@ -317,8 +336,8 @@ def evaluateCausalModel(
             classifier = experimenter.train_classifier(perturbed_expression_data_train_i, target_key = classifier_labels),
         )
         # Add detail on characteristics of each gene that might make it more predictable
-        evaluationPerPert[i],   _ = addGeneMetadata(evaluations[0], genes_considered_as="perturbations", adata=perturbed_expression_data_train_i, adata_test=perturbed_expression_data_heldout_i)
-        evaluationPerTarget[i], _ = addGeneMetadata(evaluations[1], genes_considered_as="targets"      , adata=perturbed_expression_data_train_i, adata_test=perturbed_expression_data_heldout_i)
+        evaluationPerPert[i],   _ = addGeneMetadata(evaluations[0], genes_considered_as="perturbations", adata=perturbed_expression_data_train_i, adata_test=perturbed_expression_data_heldout_i, path_to_accessory_data=path_to_accessory_data)
+        evaluationPerTarget[i], _ = addGeneMetadata(evaluations[1], genes_considered_as="targets"      , adata=perturbed_expression_data_train_i, adata_test=perturbed_expression_data_heldout_i, path_to_accessory_data=path_to_accessory_data)
         evaluationPerPert[i]["index"]   = i
         evaluationPerTarget[i]["index"] = i
 
