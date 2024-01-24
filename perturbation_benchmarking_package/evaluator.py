@@ -10,6 +10,19 @@ from scipy.stats import rankdata as rank
 import os 
 import altair as alt
 import perturbation_benchmarking_package.experimenter as experimenter
+from  scipy.stats import chi2_contingency
+from scipy.stats import f_oneway
+
+def test_targets_vs_non_targets( predicted, observed, baseline ): 
+    targets_positive = np.sign(np.round( predicted - baseline, 2))== 1
+    targets_negative = np.sign(np.round( predicted - baseline, 2))==-1
+    non_targets      = np.sign(np.round( predicted - baseline, 2))== 0
+    fc_observed = observed - baseline
+    return f_oneway(
+        fc_observed[targets_positive],
+        fc_observed[targets_negative],
+        fc_observed[non_targets],
+    ).pvalue
 
 METRICS = {
     "mae":                          lambda predicted, observed, baseline: np.abs(observed - predicted).mean(),
@@ -19,6 +32,13 @@ METRICS = {
     "mse_top_20":                   lambda predicted, observed, baseline: mse_top_n(predicted, observed, baseline, n=20),
     "mse_top_100":                  lambda predicted, observed, baseline: mse_top_n(predicted, observed, baseline, n=100),
     "mse_top_200":                  lambda predicted, observed, baseline: mse_top_n(predicted, observed, baseline, n=200),
+    "proportion_correct_direction_enrichment_pvalue":            lambda predicted, observed, baseline: chi2_contingency(
+        observed = pd.crosstab(
+            np.sign(np.round( observed - baseline, 2)),
+            np.sign(np.round(predicted - baseline, 2))
+        )
+    ),
+    "pvalue_targets_vs_non_targets":  test_targets_vs_non_targets,
 }
 
 def mse_top_n(predicted, observed, baseline, n):

@@ -479,10 +479,10 @@ def splitDataWrapper(
         - type_of_split (str): 
             - if "interventional" (default), then any perturbation is placed in either the training or the test set, but not both. 
             - If "simple", then we use a simple random split, and replicates of the same perturbation are allowed to go into different folds.
-            - If type_of_split=="genetic_interaction", we put single perturbations and controls in the training set, and multiple perturbations in the test set.
-            - If type_of_split=="demultiplexing", we put multiple perturbations and controls in the training set, and single perturbations in the test set.
-            - If type_of_split=="stratified", we put some samples from each perturbation in the training set, and if there is replication, we put some in the test set. 
-            - If type_of_split=="custom", we load the test set from the file 'custom_test_sets/<data_split_seed>.json'.
+            - If "genetic_interaction", we put single perturbations and controls in the training set, and multiple perturbations in the test set.
+            - If "demultiplexing", we put multiple perturbations and controls in the training set, and single perturbations in the test set.
+            - If "stratified", we put some samples from each perturbation in the training set, and if there is replication, we put some in the test set. 
+            - If "custom", we load the test set from the file 'custom_test_sets/<data_split_seed>.json'.
         - data_split_seed (int, optional): random seed. Defaults to 0, even if None is passed in. 
         - verbose (bool, optional): print split sizes?
 
@@ -537,12 +537,12 @@ def _splitDataHelper(adata: anndata.AnnData,
     - adata (anndata.AnnData): Object satisfying the expectations outlined in the accompanying collection of perturbation data.
     - allowedRegulators (list or set): interventions allowed to be in the test set. 
     - type_of_split (str): 
-        - if "interventional" (default), then any perturbation is placed in either the training or the test set, but not both. 
-        - If "simple", then we use a simple random split, and replicates of the same perturbation are allowed to go into different folds.
-        - If type_of_split=="genetic_interaction", we put single perturbations and controls in the training set, and multiple perturbations in the test set.
-        - If type_of_split=="demultiplexing", we put multiple perturbations and controls in the training set, and single perturbations in the test set.
-        - If type_of_split=="stratified", we put some samples from each perturbation in the training set, and if there is replication, we put some in the test set. 
-        - If type_of_split=="custom", we use custom_test_set as the test set.
+        - if "interventional" (default), then any perturbation is placed in either the training or the test set, but not both. Replicates of the same perturbation always go into the same folds. All controls go in the training set. 
+        - If "simple", then we use a simple random split (well, not quite: all controls go in the training set). Replicates of the same perturbation are allowed to go into different folds, or the same fold.  
+        - If "genetic_interaction", we put single perturbations and controls in the training set, and multiple perturbations in the test set.
+        - If "demultiplexing", we put multiple perturbations and controls in the training set, and single perturbations in the test set.
+        - If "stratified", we put some samples from each perturbation in the training set, and for any that have replication, we put some in the test set. 
+        - If "custom", we use custom_test_set as the test set.
     - data_split_seed (int): Used to seed the RNG. This function is deterministic and you must alter the data_split_seed if you want different random splits. 
     - verbose (bool): print train and test sizes?
     - custom_test_set: subset of perturbed_expression_data.obs_names, as a Python set. 
