@@ -32,12 +32,12 @@ METRICS = {
     "mse_top_20":                   lambda predicted, observed, baseline: mse_top_n(predicted, observed, baseline, n=20),
     "mse_top_100":                  lambda predicted, observed, baseline: mse_top_n(predicted, observed, baseline, n=100),
     "mse_top_200":                  lambda predicted, observed, baseline: mse_top_n(predicted, observed, baseline, n=200),
-    "proportion_correct_direction_enrichment_pvalue":            lambda predicted, observed, baseline: chi2_contingency(
+    "pvalue_effect_direction":            lambda predicted, observed, baseline: chi2_contingency(
         observed = pd.crosstab(
             np.sign(np.round( observed - baseline, 2)),
             np.sign(np.round(predicted - baseline, 2))
         )
-    ),
+    ).pvalue,
     "pvalue_targets_vs_non_targets":  test_targets_vs_non_targets,
 }
 
@@ -331,6 +331,7 @@ def evaluateCausalModel(
     classifier_labels = None,
     do_scatterplots = True, 
     path_to_accessory_data: str = "../accessory_data",
+    do_parallel: bool = True,
 ):
     """Compile plots and tables comparing heldout data and predictions for same. 
 
@@ -354,6 +355,7 @@ def evaluateCausalModel(
             outputs = outputs,
             experiment_name = i,
             classifier = experimenter.train_classifier(perturbed_expression_data_train_i, target_key = classifier_labels),
+            do_parallel=do_parallel
         )
         # Add detail on characteristics of each gene that might make it more predictable
         evaluationPerPert[i],   _ = addGeneMetadata(evaluations[0], genes_considered_as="perturbations", adata=perturbed_expression_data_train_i, adata_test=perturbed_expression_data_heldout_i, path_to_accessory_data=path_to_accessory_data)
@@ -466,7 +468,8 @@ def evaluate_across_perts(expression: anndata.AnnData,
                           baseline: anndata.AnnData, 
                           experiment_name: str, 
                           classifier, 
-                          do_careful_checks: bool=False) -> pd.DataFrame:
+                          do_careful_checks: bool=False, 
+                          do_parallel: bool = True) -> pd.DataFrame:
     """Evaluate performance for each perturbation.
 
     Args:
@@ -510,7 +513,8 @@ def evaluateOnePrediction(
     experiment_name: str,
     doPlots=False, 
     classifier=None, 
-    do_careful_checks = True):
+    do_careful_checks = True, 
+    do_parallel: bool = True):
     '''Compare observed against predicted, for expression, fold-change, or cell type.
 
             Parameters:
@@ -545,7 +549,7 @@ def evaluateOnePrediction(
         raise ValueError(f"expression and predictedExpression must have the same indices on experiment {experiment_name}.")
     baseline = baseline.X.mean(axis=0).squeeze()
     metrics_per_target = evaluate_across_targets(expression, predictedExpression)
-    metrics = evaluate_across_perts(expression, predictedExpression, baseline, experiment_name, classifier, do_careful_checks)
+    metrics = evaluate_across_perts(expression, predictedExpression, baseline, experiment_name, classifier, do_careful_checks, do_parallel)
     
     print("\nMaking some example plots")
     metrics["spearman"] = metrics["spearman"].astype(float)
