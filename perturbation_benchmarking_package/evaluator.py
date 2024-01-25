@@ -18,20 +18,55 @@ def test_targets_vs_non_targets( predicted, observed, baseline ):
     targets_negative = np.sign(np.round( predicted - baseline, 2))==-1
     non_targets      = np.sign(np.round( predicted - baseline, 2))== 0
     fc_observed = observed - baseline
-    return f_oneway(
-        fc_observed[targets_positive],
-        fc_observed[targets_negative],
-        fc_observed[non_targets],
-    ).pvalue
+    if any(targets_positive) and any(targets_negative) and any(non_targets):
+        return f_oneway(
+            fc_observed[targets_positive],
+            fc_observed[targets_negative],
+            fc_observed[non_targets],
+        ).pvalue
+    elif any(non_targets) and any(targets_negative):
+        return f_oneway(
+            fc_observed[targets_negative],
+            fc_observed[non_targets],
+        ).pvalue    
+    elif any(targets_positive) and any(targets_negative):
+        return f_oneway(
+            fc_observed[targets_positive],
+            fc_observed[targets_negative],
+        ).pvalue
+    elif any(targets_positive) and any(non_targets):
+        return f_oneway(
+            fc_observed[targets_positive],
+            fc_observed[non_targets],
+        ).pvalue
+    else:
+        return np.nan
+    
+
+def fc_targets_vs_non_targets( predicted, observed, baseline ): 
+    targets_positive = np.sign(np.round( predicted - baseline, 2))== 1
+    targets_negative = np.sign(np.round( predicted - baseline, 2))==-1
+    non_targets      = np.sign(np.round( predicted - baseline, 2))== 0
+    fc_observed = observed - baseline
+    if any(targets_positive) and any(targets_negative) and any(non_targets):
+        return fc_observed[targets_positive].mean() - fc_observed[targets_negative].mean()
+    elif any(non_targets) and any(targets_negative):
+        return fc_observed[non_targets].mean() - fc_observed[targets_negative].mean()
+    elif any(targets_positive) and any(targets_negative):
+        return fc_observed[targets_positive].mean() - fc_observed[targets_negative].mean()
+    elif any(targets_positive) and any(non_targets):
+        return fc_observed[targets_positive].mean() - fc_observed[non_targets].mean()
+    else:
+        return np.nan
 
 METRICS = {
+    "spearman":                     lambda predicted, observed, baseline: [x for x in spearmanr(observed - baseline, predicted - baseline)][0],
     "mae":                          lambda predicted, observed, baseline: np.abs(observed - predicted).mean(),
     "mse":                          lambda predicted, observed, baseline: np.linalg.norm(observed - predicted)**2,
-    "spearman":                     lambda predicted, observed, baseline: [x for x in spearmanr(observed - baseline, predicted - baseline)][0],
-    "proportion_correct_direction": lambda predicted, observed, baseline: np.mean(np.sign(observed - baseline) == np.sign(predicted - baseline)),
     "mse_top_20":                   lambda predicted, observed, baseline: mse_top_n(predicted, observed, baseline, n=20),
     "mse_top_100":                  lambda predicted, observed, baseline: mse_top_n(predicted, observed, baseline, n=100),
     "mse_top_200":                  lambda predicted, observed, baseline: mse_top_n(predicted, observed, baseline, n=200),
+    "proportion_correct_direction": lambda predicted, observed, baseline: np.mean(np.sign(observed - baseline) == np.sign(predicted - baseline)),
     "pvalue_effect_direction":            lambda predicted, observed, baseline: chi2_contingency(
         observed = pd.crosstab(
             np.sign(np.round( observed - baseline, 2)),
@@ -39,6 +74,7 @@ METRICS = {
         )
     ).pvalue,
     "pvalue_targets_vs_non_targets":  test_targets_vs_non_targets,
+    "fc_targets_vs_non_targets": fc_targets_vs_non_targets,
 }
 
 def mse_top_n(predicted, observed, baseline, n):
