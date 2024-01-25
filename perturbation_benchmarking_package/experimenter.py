@@ -145,10 +145,10 @@ def validate_metadata(
         if not k in metadata:
             metadata[k] = defaults[k]
 
-    # network handling is complex; add some default behavior to reduce metadata boilerplate
+    # Add some default network handling behavior to reduce metadata boilerplate
     for netName in metadata["network_datasets"].keys():
         if not "subnets" in metadata["network_datasets"][netName].keys():
-            metadata["network_datasets"][netName]["subnets"] = ["all"]
+            metadata["network_datasets"][netName]["subnets"] = []
         if not "do_aggregate_subnets" in metadata["network_datasets"][netName].keys():
             metadata["network_datasets"][netName]["do_aggregate_subnets"] = False
     
@@ -385,7 +385,7 @@ def set_up_data_networks_conditions(metadata, amount_to_do, outputs):
     # Get networks
     networks = {}
     for netName in list(metadata["network_datasets"].keys()):
-        networks = networks | load_networks.get_subnets(
+        networks = networks | get_subnets(
             netName, 
             subnets = metadata["network_datasets"][netName]["subnets"], 
             target_genes = perturbed_expression_data.var_names, 
@@ -790,3 +790,47 @@ def load_successful_conditions(outputs):
             return False
     conditions = conditions.loc[[i for i in conditions.index if has_predictions(i)], :]
     return conditions
+
+def get_subnets(netName:str, subnets:list = [], target_genes = None, do_aggregate_subnets = False) -> dict:
+    """Get gene regulatory networks, possibly aggregating sub-networks and possibly including non-informative (empty, fully connected, or random) networks.
+    This function is somewhat redundant with load_grn_all_subnetworks and load_grn_by_subnetwork, but it is better tailored for our benchmarking framework.
+
+    Args:
+        netName (str): Name of network to pull from collection, or "dense" or e.g. "random0.123" for random with density 12.3%. 
+        subnets (list, optional): List of cell type- or tissue-specific subnetworks to include. 
+        do_aggregate_subnets (bool, optional): If True, the returned dict has just one network named netName. If False,
+            then the return value contains many separate networks named like netName + " " + subnet_name.
+
+    Returns:
+        dict: A dict containing LightNetwork objects representing gene regulatory networks. 
+    """
+    print("Getting network '" + netName + "'")
+    gc.collect()
+    if "random" in netName:
+        networks = { 
+            netName: load_networks.LightNetwork(
+                df = load_networks.pivotNetworkWideToLong( 
+                    load_networks.makeRandomNetwork( target_genes = target_genes, density = float( netName[6:] ) ) 
+                ) 
+            )
+        }
+    elif "empty" == netName or "dense" == netName:
+        networks = { 
+            netName: load_networks.LightNetwork(df=pd.DataFrame(index=[], columns=["regulator", "target", "weight"]))
+        }
+        if "dense"==netName:
+            print("WARNING: for 'dense' network, returning an empty network. In GRN.fit(), use network_prior='ignore'. ")
+    else:            
+        networks = {}
+        if do_aggregate_subnets:
+            new_key = netName 
+            if len(subnets)==0:
+                subnets = load_networks.list_subnetworks(netName)
+            networks[new_key] = load_networks.LightNetwork(netName, subnets)
+        else:
+            if len(subnets)==0:
+                subnets = load_networks.list_subnetworks(netName)
+            for subnet_name in subnets:
+                new_key = netName + " " + subnet_name
+                networks[new_key] = load_networks.LightNetwork(netName, [subnet_name])
+    return networks
