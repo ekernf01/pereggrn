@@ -67,7 +67,7 @@ METRICS = {
     "mse_top_100":                  lambda predicted, observed, baseline: mse_top_n(predicted, observed, baseline, n=100),
     "mse_top_200":                  lambda predicted, observed, baseline: mse_top_n(predicted, observed, baseline, n=200),
     "proportion_correct_direction": lambda predicted, observed, baseline: np.mean(np.sign(observed - baseline) == np.sign(predicted - baseline)),
-    "pvalue_effect_direction":            lambda predicted, observed, baseline: chi2_contingency(
+    "pvalue_effect_direction":      lambda predicted, observed, baseline: chi2_contingency(
         observed = pd.crosstab(
             np.sign(np.round( observed - baseline, 2)),
             np.sign(np.round(predicted - baseline, 2))
@@ -462,13 +462,14 @@ def evaluate_across_targets(expression: anndata.AnnData, predictedExpression: an
     metrics_per_target = pd.DataFrame(results, columns=["target", "standard_deviation", "mae", "mse"]).set_index("target")
     return metrics_per_target
 
-def evaluate_per_pert(pert: str,
-                      all_perts: pd.Series,
-                      expression: np.matrix, 
-                      predictedExpression: np.matrix,
-                      baseline: np.matrix, 
-                      classifier, 
-                      ) -> pd.DataFrame:
+def evaluate_per_pert(
+        pert: str,
+        all_perts: pd.Series,
+        expression: np.matrix, 
+        predictedExpression: np.matrix,
+        baseline: np.matrix, 
+        classifier, 
+    ) -> pd.DataFrame:
     """Calculate evaluation metrics for one perturbation. 
 
     Args:
@@ -485,11 +486,11 @@ def evaluate_per_pert(pert: str,
     i = all_perts==pert
     predicted = safe_squeeze(predictedExpression[i, :].mean(axis=0))
     observed = safe_squeeze(expression[i, :].mean(axis=0))
-    assert observed.shape[0] == expression.shape[1]
+    assert observed.shape[0] == expression.shape[1], f"For perturbation {pert}, observed and predicted are different shapes."
     def is_constant(x):
         return np.std(x) < 1e-12
-    if type(predicted) is float and np.isnan(predicted) or is_constant(predicted - baseline) or is_constant(observed - baseline):
-        return pert, [0, 1, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan]
+    if any(np.isnan(predicted)) or is_constant(predicted - baseline) or is_constant(observed - baseline):
+        return pd.DataFrame({m:np.nan for m in METRICS.keys()}, index = [pert])
     else:
         results = {k:m(predicted, observed, baseline) for k,m in METRICS.items()}
         results["cell_type_correct"] = np.nan
@@ -538,7 +539,7 @@ def evaluate_across_perts(expression: anndata.AnnData,
             delayed(evaluate_per_pert)(pert, expression.obs["perturbation"], expression.X, predictedExpression.X, baseline, classifier) 
             for pert in perts
         )
-    results = pd.concat([r for r in results if type(r)==pd.DataFrame])
+    results = pd.concat([r for r in results if type(r) == pd.DataFrame])
     return results
 
 def evaluateOnePrediction(
@@ -592,46 +593,47 @@ def evaluateOnePrediction(
     hardest = metrics["spearman"].idxmin()
     easiest = metrics["spearman"].idxmax()
     perturbation_plot_path = os.path.join(outputs, "perturbations", str(experiment_name))
-    for pert in metrics.index:
-        is_hardest = hardest==pert
-        is_easiest = easiest==pert
-        if doPlots | is_hardest | is_easiest:
-            i = expression.obs["perturbation"]==pert
-            observed  = safe_squeeze(expression[         i,:].X.mean(axis=0))
-            predicted = safe_squeeze(predictedExpression[i,:].X.mean(axis=0))
-            os.makedirs(perturbation_plot_path, exist_ok = True)
-            diagonal = alt.Chart(
-                pd.DataFrame({
-                    "x":[-1, 1],
-                    "y":[-1,1 ],
-                })
-            ).mark_line(color= 'black').encode(
-                x= 'x',
-                y= 'y',
-            )
-            scatterplot = alt.Chart(
-                pd.DataFrame({
-                    "Observed log fc": observed-baseline, 
-                    "Predicted log fc": predicted-baseline, 
-                    "Baseline expression":baseline,
-                })
-            ).mark_circle().encode(
-                x="Observed log fc:Q",
-                y="Predicted log fc:Q",
-                color="Baseline expression:Q",
-            ).properties(
-                title=pert + " (Spearman rho="+ str(round(metrics.loc[pert,"spearman"], ndigits=2)) +")"
-            ) + diagonal
-            alt.data_transformers.disable_max_rows()
-            pd.DataFrame().to_csv(os.path.join(perturbation_plot_path, f"{pert}.txt"))
-            try:
-                scatterplot.save(os.path.join(perturbation_plot_path, f"{pert}.svg"))
-                if is_easiest:
-                    scatterplot.save(os.path.join(perturbation_plot_path, f"_easiest({pert}).svg"))
-                if is_hardest:
-                    scatterplot.save(os.path.join(perturbation_plot_path, f"_hardest({pert}).svg"))
-            except Exception as e:
-                print(f"Altair saver failed with error {repr(e)}")
+    if doPlots:
+        for pert in metrics.index:
+            is_hardest = hardest==pert
+            is_easiest = easiest==pert
+            if is_hardest | is_easiest:
+                i = expression.obs["perturbation"]==pert
+                observed  = safe_squeeze(expression[         i,:].X.mean(axis=0))
+                predicted = safe_squeeze(predictedExpression[i,:].X.mean(axis=0))
+                os.makedirs(perturbation_plot_path, exist_ok = True)
+                diagonal = alt.Chart(
+                    pd.DataFrame({
+                        "x":[-1, 1],
+                        "y":[-1,1 ],
+                    })
+                ).mark_line(color= 'black').encode(
+                    x= 'x',
+                    y= 'y',
+                )
+                scatterplot = alt.Chart(
+                    pd.DataFrame({
+                        "Observed log fc": observed-baseline, 
+                        "Predicted log fc": predicted-baseline, 
+                        "Baseline expression":baseline,
+                    })
+                ).mark_circle().encode(
+                    x="Observed log fc:Q",
+                    y="Predicted log fc:Q",
+                    color="Baseline expression:Q",
+                ).properties(
+                    title=pert + " (Spearman rho="+ str(round(metrics.loc[pert,"spearman"], ndigits=2)) +")"
+                ) + diagonal
+                alt.data_transformers.disable_max_rows()
+                pd.DataFrame().to_csv(os.path.join(perturbation_plot_path, f"{pert}.txt"))
+                try:
+                    scatterplot.save(os.path.join(perturbation_plot_path, f"{pert}.svg"))
+                    if is_easiest:
+                        scatterplot.save(os.path.join(perturbation_plot_path, f"_easiest({pert}).svg"))
+                    if is_hardest:
+                        scatterplot.save(os.path.join(perturbation_plot_path, f"_hardest({pert}).svg"))
+                except Exception as e:
+                    print(f"Altair saver failed with error {repr(e)}")
     metrics["perturbation"] = metrics.index
     return metrics, metrics_per_target
     

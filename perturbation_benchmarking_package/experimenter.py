@@ -35,6 +35,7 @@ def get_required_keys():
         "facet_by",
         # Data and preprocessing
         "network_datasets",
+        "allowed_regulators_vs_network_regulators",
         "perturbation_dataset",
         "merge_replicates",
         "desired_heldout_fraction",
@@ -75,6 +76,7 @@ def get_default_metadata():
         dict: metadata parameter defaults
     """
     return {
+        "allowed_regulators_vs_network_regulators": "all",
         "pruning_parameter": None, 
         "pruning_strategy": "none",
         "network_prior": "ignore",
@@ -371,6 +373,10 @@ def set_up_data_networks_conditions(metadata, amount_to_do, outputs):
     print("Getting data...")
     perturbed_expression_data = load_perturbations.load_perturbation(metadata["perturbation_dataset"])
     try:
+        timeseries_expression_data = load_perturbations.load_perturbation(metadata["perturbation_dataset"], is_timeseries=True)
+    except:
+        timeseries_expression_data = None
+    try:
         perturbed_expression_data = perturbed_expression_data.to_memory()
     except ValueError: #Object is already in memory.
         pass
@@ -381,6 +387,8 @@ def set_up_data_networks_conditions(metadata, amount_to_do, outputs):
     elap = "expression_level_after_perturbation"
     if metadata["merge_replicates"]:
         perturbed_expression_data = averageWithinPerturbation(ad=perturbed_expression_data)
+        if timeseries_expression_data is not None:
+            raise ValueError("We do not currently support merging of replicates in time-series training data.")
     print("...done. Getting networks...")
     # Get networks
     networks = {}
@@ -409,7 +417,7 @@ def set_up_data_networks_conditions(metadata, amount_to_do, outputs):
         pass
     conditions.to_csv( os.path.join(outputs, "conditions.csv") )
     print("... done.")
-    return perturbed_expression_data, networks, conditions
+    return perturbed_expression_data, networks, conditions, timeseries_expression_data
 
 def doSplitsMatch(
         experiment1: str, 
@@ -461,7 +469,7 @@ def splitDataWrapper(
     perturbed_expression_data: anndata.AnnData,
     desired_heldout_fraction: float, 
     networks: dict, 
-    allowed_regulators_vs_network_regulators: str = "all", 
+    allowed_regulators_vs_network_regulators: str, 
     type_of_split: str = "interventional" ,
     data_split_seed: int = None,
     verbose: bool = True,
@@ -473,9 +481,9 @@ def splitDataWrapper(
         - perturbed_expression_data (anndata.AnnData): expression dataset to split
         - desired_heldout_fraction (float): number between 0 and 1. fraction in test set.
         - allowed_regulators_vs_network_regulators (str, optional): "all", "union", or "intersection".
-            - If "all" (default), then anything can go in the test set.
-            - If "union", then genes must be in at least one of the provided networks to go in the test set.
-            - If "intersection", then genes must be in all of the provided networks to go in the test set.
+            - If "all" (default), then any perturbation can go in the test set.
+            - If "union", then perturbed genes must be regulators in at least one of the provided networks to go in the test set.
+            - If "intersection", then perturbed genes must be regulators in all of the provided networks to go in the test set.
         - type_of_split (str): 
             - if "interventional" (default), then any perturbation is placed in either the training or the test set, but not both. 
             - If "simple", then we use a simple random split, and replicates of the same perturbation are allowed to go into different folds.
@@ -639,7 +647,7 @@ def _splitDataHelper(adata: anndata.AnnData,
             train_samples = train_samples + list(train_samples_this_pert)
             test_samples = test_samples + list(set(samples_this_pert).difference(train_samples_this_pert))
         adata_train   = adata[train_samples, ].copy()
-        adata_heldout = adata[test_samples, ].copy()
+        adata_heldout = adata[test_samples, ].copy()        
     elif type_of_split == "custom":
         adata_train   = adata[list(set(adata.obs_names).difference(custom_test_set)), ].copy()
         adata_heldout = adata[list(custom_test_set), ].copy()
@@ -670,6 +678,7 @@ def averageWithinPerturbation(ad: anndata.AnnData, confounders = []):
 
     Args:
         ad (anndata.AnnData): Object conforming to the validity checks in the load_perturbations module.
+        confounders: other factors to consider when averaging. For instance, you may want to stratify by cell cycle phase. 
     """
     if len(confounders) != 0:
         raise NotImplementedError("Haven't yet decided how to handle confounders when merging replicates.")
