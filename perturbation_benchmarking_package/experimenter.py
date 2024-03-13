@@ -17,14 +17,12 @@ from collections import OrderedDict
 from sklearn.ensemble import RandomForestClassifier
 
 def get_required_keys():
-    """Get all metadata keys that are required by downstream code. Some have 
-    default values so they are not necessarily required to be user-specified. 
+    """Get all metadata keys that are required from the user.
 
     Returns:
         tuple: the keys
     """
     return (
-        # Experiment info
         "unique_id",
         "nickname",
         "readme",
@@ -33,23 +31,7 @@ def get_required_keys():
         "factor_varied",    
         "color_by",
         "facet_by",
-        # Data and preprocessing
-        "network_datasets",
-        "allowed_regulators_vs_network_regulators",
         "perturbation_dataset",
-        "merge_replicates",
-        "desired_heldout_fraction",
-        "type_of_split",
-        # Modeling decisions
-        "pruning_parameter", 
-        "pruning_strategy",
-        "network_prior",
-        "regression_method",
-        "feature_extraction",
-        "low_dimensional_structure",
-        "low_dimensional_training",
-        "matching_method",
-        "prediction_timescale",
     )
 
 def get_optional_keys():
@@ -99,7 +81,8 @@ def get_default_metadata():
         "low_dimensional_structure": "none",
         "low_dimensional_training": "svd",
         "matching_method": "steady_state",
-        "prediction_timescale": 1
+        "prediction_timescale": [1],
+        "expand_prediction_timescale": False,
     }
 
 def validate_metadata(
@@ -156,7 +139,7 @@ def validate_metadata(
     
     # Check all keys
     required_keys = get_required_keys()
-    allowed_keys = required_keys + get_optional_keys()
+    allowed_keys = list(required_keys) + list(get_default_metadata().keys()) + list(get_optional_keys())
     missing = [k for k in required_keys if k not in metadata.keys()]
     extra = [k for k in metadata.keys() if k not in allowed_keys]
     assert len(missing)==0, f"Metadata is missing some required keys: {' '.join(missing)}"
@@ -164,7 +147,7 @@ def validate_metadata(
     
     # Check a few of the values
     for k in metadata["kwargs_to_expand"]:
-        assert k not in metadata, f"Key {k} names both an expandable kwarg and an Experiment metadata key. Sorry, but this is not allowed. See get_default_metadata() and get_required_keys() for names of keys reserved for the benchmarking code."
+        assert k not in metadata, f"Key {k} names both an expandable kwarg and an Experiment metadata key. Sorry, but you have to call that kwarg something else. See get_default_metadata() and get_required_keys() for names of keys reserved for the benchmarking code."
     assert metadata["perturbation_dataset"] in set(load_perturbations.load_perturbation_metadata().query("is_ready=='yes'")["name"]), "Cannot find perturbation data under that name. Try load_perturbations.load_perturbation_metadata()."
     for netName in metadata["network_datasets"].keys():
         assert netName in set(load_networks.load_grn_metadata()["name"]).union({"dense", "empty"}) or "random" in netName, "Networks exist as named"
@@ -191,7 +174,7 @@ def lay_out_runs(
         pd.DataFrame: metadata on the different conditions in this experiment
 
     """
-    metadata = metadata.copy() # We're gonna mangle it. :)
+    metadata = metadata.copy() # We're gonna mangle it so I don't want any weird pass-by-reference behavior. :)
     
     # ===== Remove items that don't want to be cartesian-producted =====
     # This is too bulky to want in the csv
@@ -211,7 +194,7 @@ def lay_out_runs(
     del metadata["baseline_condition"]
 
     # kwargs is a dict containing arbitrary kwargs for backend code (e.g. batch size for DCD-FG). 
-    # We allow these to be expanded if the user says so.
+    # We expand these if the user says so.
     kwargs = metadata["kwargs"].copy()
     kwargs_to_expand = metadata["kwargs_to_expand"].copy()
     del metadata["kwargs"]
@@ -223,6 +206,12 @@ def lay_out_runs(
     for k in metadata.keys():
         if type(metadata[k]) != list:
             metadata[k] = [metadata[k]]
+
+    # If we want to predict not one expression state but a trajectory over time,
+    # sometimes it is convenient for these to be expanded, and other times not.
+    if not metadata["expand_prediction_timescale"]:
+        del metadata["prediction_timescale"]
+    del metadata["expand_prediction_timescale"]
 
     # ==== Done preparing for expansion ====
     if metadata["expand"][0]=="grid":
@@ -320,7 +309,8 @@ def do_one_run(
         matching_method                      = conditions.loc[i,"matching_method"],
         low_dimensional_structure            = conditions.loc[i,"low_dimensional_structure"],
         low_dimensional_training             = conditions.loc[i,"low_dimensional_training"],
-        prediction_timescale                 = conditions.loc[i,"prediction_timescale"],
+                                             # We can provide either one time point per condition, or a list to predict a whole trajectory at once. 
+        prediction_timescale                 = conditions.loc[i,"prediction_timescale"] if metadata["expand_prediction_timescale"] else metadata["prediction_timescale"],
         do_parallel = do_parallel,
         kwargs                               = {
                                                 k:simplify_type(conditions.loc[i,:])[k] if k in metadata["kwargs_to_expand"] else metadata["kwargs"][k] 
@@ -469,7 +459,7 @@ def splitDataWrapper(
     perturbed_expression_data: anndata.AnnData,
     desired_heldout_fraction: float, 
     networks: dict, 
-    allowed_regulators_vs_network_regulators: str, 
+    allowed_regulators_vs_network_regulators: str = "all", 
     type_of_split: str = "interventional" ,
     data_split_seed: int = None,
     verbose: bool = True,
@@ -480,7 +470,7 @@ def splitDataWrapper(
         - networks (dict): dict containing LightNetwork objects from the load_networks module. Used to restrict what is allowed in the test set.
         - perturbed_expression_data (anndata.AnnData): expression dataset to split
         - desired_heldout_fraction (float): number between 0 and 1. fraction in test set.
-        - allowed_regulators_vs_network_regulators (str, optional): "all", "union", or "intersection".
+        - allowed_regulators_vs_network_regulators (str): "all", "union", or "intersection".
             - If "all" (default), then any perturbation can go in the test set.
             - If "union", then perturbed genes must be regulators in at least one of the provided networks to go in the test set.
             - If "intersection", then perturbed genes must be regulators in all of the provided networks to go in the test set.

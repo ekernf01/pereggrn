@@ -29,7 +29,7 @@ class TestMetadataExpand(unittest.TestCase):
             ],
             "baseline_condition": 0,
             "merge_replicates": False,
-            "perturbation_dataset": "frangieh_IFNγ_v1",
+            "perturbation_dataset": "nakatake",
             "num_genes": 1000,
             "starting_expression": ["control", "heldout"],
             "network_datasets": {
@@ -37,9 +37,9 @@ class TestMetadataExpand(unittest.TestCase):
             }
         }
         metadata = experimenter.validate_metadata(metadata=metadata)
-        conditions = experimenter.lay_out_runs( metadata = metadata, networks = {"empty": load_networks.get_subnets("empty")} )
+        conditions = experimenter.lay_out_runs( metadata = metadata, networks = {"empty": experimenter.get_subnets("empty")} )
         assert conditions.shape[0] == 4
-        conditions = experimenter.lay_out_runs( metadata = metadata|{"expand":"ladder"}, networks = {"empty": load_networks.get_subnets("empty")} )
+        conditions = experimenter.lay_out_runs( metadata = metadata|{"expand":"ladder"}, networks = {"empty": experimenter.get_subnets("empty")} )
         assert conditions.shape[0] == 2
 
 class TestDataSplit(unittest.TestCase):
