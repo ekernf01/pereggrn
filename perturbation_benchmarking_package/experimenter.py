@@ -193,6 +193,12 @@ def lay_out_runs(
         pass
     del metadata["baseline_condition"]
 
+    # If we want to predict not one expression state but a trajectory over time,
+    # sometimes it is convenient for these to be expanded, and other times not.
+    if not metadata["expand_prediction_timescale"]:
+        del metadata["prediction_timescale"]
+    del metadata["expand_prediction_timescale"]
+    
     # kwargs is a dict containing arbitrary kwargs for backend code (e.g. batch size for DCD-FG). 
     # We expand these if the user says so.
     kwargs = metadata["kwargs"].copy()
@@ -206,12 +212,6 @@ def lay_out_runs(
     for k in metadata.keys():
         if type(metadata[k]) != list:
             metadata[k] = [metadata[k]]
-
-    # If we want to predict not one expression state but a trajectory over time,
-    # sometimes it is convenient for these to be expanded, and other times not.
-    if not metadata["expand_prediction_timescale"]:
-        del metadata["prediction_timescale"]
-    del metadata["expand_prediction_timescale"]
 
     # ==== Done preparing for expansion ====
     if metadata["expand"][0]=="grid":
