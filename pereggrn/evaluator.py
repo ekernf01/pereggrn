@@ -9,7 +9,7 @@ from scipy.stats import spearmanr as spearmanr
 from scipy.stats import rankdata as rank
 import os 
 import altair as alt
-import perturbation_benchmarking_package.experimenter as experimenter
+import pereggrn.experimenter as experimenter
 from  scipy.stats import chi2_contingency
 from scipy.stats import f_oneway
 

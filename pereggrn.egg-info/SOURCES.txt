@@ -1,0 +1,7 @@
+README.md
+setup.py
+pereggrn.egg-info/PKG-INFO
+pereggrn.egg-info/SOURCES.txt
+pereggrn.egg-info/dependency_links.txt
+pereggrn.egg-info/requires.txt
+pereggrn.egg-info/top_level.txt

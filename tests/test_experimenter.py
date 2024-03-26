@@ -1,14 +1,14 @@
 import unittest
 import perturbation_benchmarking_package.experimenter as experimenter
-import load_perturbations
-import load_networks
+import pereggrn_perturbations
+import pereggrn_networks
 import numpy as np
 import json
 import os
 import shutil
-load_networks.set_grn_location("../../network_collection/networks")
-load_perturbations.set_data_path("../../perturbation_data/perturbations")
-adata = load_perturbations.load_perturbation("norman")
+pereggrn_networks.set_grn_location("../../network_collection/networks")
+pereggrn_perturbations.set_data_path("../../perturbation_data/perturbations")
+adata = pereggrn_perturbations.pereggrn_perturbation("norman")
 adata = adata[:, adata.uns["perturbed_and_measured_genes"]] # slim it down to speed this up
 
 
@@ -88,12 +88,12 @@ if __name__ == '__main__':
 # filter_genes
 # set_up_data_networks_conditions
 # doSplitsMatch
-# load_custom_test_set
+# pereggrn_custom_test_set
 # splitDataWrapper
 # _splitDataHelper
 # averageWithinPerturbation
 # train_classifier
 # downsample
 # safe_save_adata
-# load_successful_conditions
+# pereggrn_successful_conditions
 # has_predictions

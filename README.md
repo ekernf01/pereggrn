@@ -6,12 +6,12 @@ This repo contains software that generated our benchmarking results. For full do
 
 Just this package:
 
-`pip install 'perturbation_benchmarking_package @ git+https://github.com/ekernf01/perturbation_benchmarking_package.git'`
+`pip install 'pereggrn @ git+https://github.com/ekernf01/pereggrn.git'`
 
 With our other related packages:
 
 ```bash
-for p in load_networks load_perturbations ggrn_backend2 ggrn perturbation_benchmarking_package geneformer_embeddings
+for p in pereggn_networks pereggrn_perturbations pereggrn ggrn ggrn_backend2 geneformer_embeddings
 do
     pip install ${p} @ http://github.com/ekernf01/${p}
 done

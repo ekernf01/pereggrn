@@ -5,7 +5,7 @@ with open('README.md', 'r', encoding='utf-8') as fh:
 	long_description = fh.read()
 
 setup(
-    name='perturbation_benchmarking_package',
+    name='pereggrn',
     version='0.0.1',
     description='Systematic benchmarking of in silico genetic perturbations',
     long_description=long_description,
@@ -21,5 +21,5 @@ setup(
         "scanpy",
     ],
     python_requires=">=3.7", 
-    url='https://github.com/ekernf01/perturbation_benchmarking_package',
+    url='https://github.com/ekernf01/pereggrn',
 )

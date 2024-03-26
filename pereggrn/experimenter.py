@@ -9,10 +9,10 @@ import scipy
 import anndata
 import scanpy as sc
 from itertools import product
-import perturbation_benchmarking_package.evaluator as evaluator
+import pereggrn.evaluator as evaluator
 import ggrn.api as ggrn
-import load_networks
-import load_perturbations
+import pereggrn_networks
+import pereggrn_perturbations
 from collections import OrderedDict
 from sklearn.ensemble import RandomForestClassifier
 
@@ -148,9 +148,9 @@ def validate_metadata(
     # Check a few of the values
     for k in metadata["kwargs_to_expand"]:
         assert k not in metadata, f"Key {k} names both an expandable kwarg and an Experiment metadata key. Sorry, but you have to call that kwarg something else. See get_default_metadata() and get_required_keys() for names of keys reserved for the benchmarking code."
-    assert metadata["perturbation_dataset"] in set(load_perturbations.load_perturbation_metadata().query("is_ready=='yes'")["name"]), "Cannot find perturbation data under that name. Try load_perturbations.load_perturbation_metadata()."
+    assert metadata["perturbation_dataset"] in set(pereggrn_perturbations.load_perturbation_metadata().query("is_ready=='yes'")["name"]), "Cannot find perturbation data under that name. Try pereggrn_perturbations.load_perturbation_metadata()."
     for netName in metadata["network_datasets"].keys():
-        assert netName in set(load_networks.load_grn_metadata()["name"]).union({"dense", "empty"}) or "random" in netName, "Networks exist as named"
+        assert netName in set(pereggrn_networks.load_grn_metadata()["name"]).union({"dense", "empty"}) or "random" in netName, "Networks exist as named"
         assert "subnets" in metadata["network_datasets"][netName].keys(), "Optional metadata fields filled correctly"
         assert "do_aggregate_subnets" in metadata["network_datasets"][netName].keys(), "Optional metadata fields filled correctly"
 
@@ -300,7 +300,7 @@ def do_one_run(
     print("Fitting models.", flush = True)
     grn.fit(
         method                               = conditions.loc[i,"regression_method"], 
-        cell_type_labels                     = None,
+        cell_type_labels                     = "cell_type",
         cell_type_sharing_strategy           = "identical",
         network_prior                        = conditions.loc[i,"network_prior"],
         pruning_strategy                     = conditions.loc[i,"pruning_strategy"],
@@ -361,9 +361,9 @@ def set_up_data_networks_conditions(metadata, amount_to_do, outputs):
     """Set up the expression data, networks, and a sample sheet for this experiment."""
     # Data, networks, experiment sheet must be generated in that order because reasons
     print("Getting data...")
-    perturbed_expression_data = load_perturbations.load_perturbation(metadata["perturbation_dataset"])
+    perturbed_expression_data = pereggrn_perturbations.load_perturbation(metadata["perturbation_dataset"])
     try:
-        timeseries_expression_data = load_perturbations.load_perturbation(metadata["perturbation_dataset"], is_timeseries=True)
+        timeseries_expression_data = pereggrn_perturbations.load_perturbation(metadata["perturbation_dataset"], is_timeseries=True)
     except:
         timeseries_expression_data = None
     try:
@@ -467,7 +467,7 @@ def splitDataWrapper(
     """Split the data into train and test.
 
     Args:
-        - networks (dict): dict containing LightNetwork objects from the load_networks module. Used to restrict what is allowed in the test set.
+        - networks (dict): dict containing LightNetwork objects from the pereggrn_networks module. Used to restrict what is allowed in the test set.
         - perturbed_expression_data (anndata.AnnData): expression dataset to split
         - desired_heldout_fraction (float): number between 0 and 1. fraction in test set.
         - allowed_regulators_vs_network_regulators (str): "all", "union", or "intersection".
@@ -667,7 +667,7 @@ def averageWithinPerturbation(ad: anndata.AnnData, confounders = []):
     """Average the expression levels within each level of ad.obs["perturbation"].
 
     Args:
-        ad (anndata.AnnData): Object conforming to the validity checks in the load_perturbations module.
+        ad (anndata.AnnData): Object conforming to the validity checks in the pereggrn_perturbations module.
         confounders: other factors to consider when averaging. For instance, you may want to stratify by cell cycle phase. 
     """
     if len(confounders) != 0:
@@ -703,7 +703,7 @@ def train_classifier(adata: anndata.AnnData, target_key: str = None):
     """Train a random forest classifier to predict the target key. By default, it looks for "louvain".
 
     Args:
-        adata (anndata.AnnData): perturbation transcriptomics data conforming to the expectations enforced by load_perturbations.check_perturbation_dataset(). 
+        adata (anndata.AnnData): perturbation transcriptomics data conforming to the expectations enforced by pereggrn_perturbations.check_perturbation_dataset(). 
         target_key (str, optional): Column of adata.obs to use as labels. Defaults to None.
 
     Errors:
@@ -807,15 +807,15 @@ def get_subnets(netName:str, subnets:list = [], target_genes = None, do_aggregat
     gc.collect()
     if "random" in netName:
         networks = { 
-            netName: load_networks.LightNetwork(
-                df = load_networks.pivotNetworkWideToLong( 
-                    load_networks.makeRandomNetwork( target_genes = target_genes, density = float( netName[6:] ) ) 
+            netName: pereggrn_networks.LightNetwork(
+                df = pereggrn_networks.pivotNetworkWideToLong( 
+                    pereggrn_networks.makeRandomNetwork( target_genes = target_genes, density = float( netName[6:] ) ) 
                 ) 
             )
         }
     elif "empty" == netName or "dense" == netName:
         networks = { 
-            netName: load_networks.LightNetwork(df=pd.DataFrame(index=[], columns=["regulator", "target", "weight"]))
+            netName: pereggrn_networks.LightNetwork(df=pd.DataFrame(index=[], columns=["regulator", "target", "weight"]))
         }
         if "dense"==netName:
             print("WARNING: for 'dense' network, returning an empty network. In GRN.fit(), use network_prior='ignore'. ")
@@ -824,12 +824,12 @@ def get_subnets(netName:str, subnets:list = [], target_genes = None, do_aggregat
         if do_aggregate_subnets:
             new_key = netName 
             if len(subnets)==0:
-                subnets = load_networks.list_subnetworks(netName)
-            networks[new_key] = load_networks.LightNetwork(netName, subnets)
+                subnets = pereggrn_networks.list_subnetworks(netName)
+            networks[new_key] = pereggrn_networks.LightNetwork(netName, subnets)
         else:
             if len(subnets)==0:
-                subnets = load_networks.list_subnetworks(netName)
+                subnets = pereggrn_networks.list_subnetworks(netName)
             for subnet_name in subnets:
                 new_key = netName + " " + subnet_name
-                networks[new_key] = load_networks.LightNetwork(netName, [subnet_name])
+                networks[new_key] = pereggrn_networks.LightNetwork(netName, [subnet_name])
     return networks
