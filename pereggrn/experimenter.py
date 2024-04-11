@@ -284,7 +284,8 @@ def do_one_run(
         network              = networks[conditions.loc[i,'network_datasets']],
         eligible_regulators  = eligible_regulators,
         feature_extraction   = conditions.loc[i,"feature_extraction"],
-        validate_immediately = True
+        validate_immediately = True, 
+        memoization_folder = os.path.join(outputs, "memoization", str(i)),
     )
 
     def simplify_type(x):
