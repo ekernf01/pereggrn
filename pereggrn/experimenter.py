@@ -663,6 +663,15 @@ def _splitDataHelper(adata: anndata.AnnData,
         )
     return adata_train, adata_heldout
 
+def stringy_mean(x):
+        """Take a mean but handle comma separated strings, e.g. mean of ["1,3", "2,4"] returns ["1.5,3.5"]."""
+        x = [str(y) for y in x]
+        x = [y.split(",") for y in x]
+        x = [[float(z) for z in y] for y in x]
+        x = np.array(x)
+        print(x)
+        x = np.mean(x, axis = 0)
+        return ",".join([str(y) for y in x])
 
 def averageWithinPerturbation(ad: anndata.AnnData, confounders = []):
     """Average the expression levels within each level of ad.obs["perturbation"].
@@ -671,30 +680,19 @@ def averageWithinPerturbation(ad: anndata.AnnData, confounders = []):
         ad (anndata.AnnData): Object conforming to the validity checks in the pereggrn_perturbations module.
         confounders: other factors to consider when averaging. For instance, you may want to stratify by cell cycle phase. 
     """
-    if len(confounders) != 0:
-        raise NotImplementedError("Haven't yet decided how to handle confounders when merging replicates.")
-
-    perts = ad.obs["perturbation"].unique()
+    grouping_variables = ["perturbation"] + confounders
+    new_obs = ad.obs[grouping_variables + ["expression_level_after_perturbation"]].groupby(grouping_variables).agg({"expression_level_after_perturbation": stringy_mean}).reset_index()
     new_ad = anndata.AnnData(
-        X = np.zeros((len(perts), len(ad.var_names))),
-        obs = pd.DataFrame(
-            {"perturbation":perts}, 
-            index = perts, 
-            columns=ad.obs.columns.copy(),
-        ),
+        X = np.zeros((len(new_obs.index), len(ad.var_names))),
+        obs = new_obs,
         var = ad.var,
         dtype = np.float32
     )
-    for p in perts:
-        p_idx = ad.obs["perturbation"]==p
-        new_ad[p,].X = ad[p_idx,:].X.mean(0)
-        new_ad.obs.loc[p,:] = ad[p_idx,:].obs.iloc[0,:]
-        try:
-            new_ad.obs.loc[p,"expression_level_after_perturbation"] = ad.obs.loc[p_idx, "expression_level_after_perturbation"].mean()
-        except:
-            # If it's a multi-gene perturbation in the format "0,0,0", don't bother averaging
-            # Hope to fix this eventually to average within each coord. 
-            new_ad.obs.loc[p,"expression_level_after_perturbation"] = ad.obs.loc[p_idx, "expression_level_after_perturbation"][0]
+    for i,obs_row in new_obs.iterrows():
+        p_idx = True
+        for g in grouping_variables:
+            p_idx = p_idx & (ad.obs[g]==obs_row[g])
+        new_ad[i,].X = ad[p_idx,:].X.mean(0)
     new_ad.obs = new_ad.obs.astype(dtype = {c:ad.obs.dtypes[c] for c in new_ad.obs.columns}, copy = True)
     new_ad.raw = ad.copy()
     new_ad.uns = ad.uns.copy()
