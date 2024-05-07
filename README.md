@@ -8,7 +8,7 @@ This code is currently "trapped" in the very specific file/folder layout of our 
 
 `pereggrn --config metadata.json --output experiments`
 
-The contents of `metadata.json` will describe what networks to test, how many genes to include, and tons of other information about the experiment. It is documented [here](https://github.com/ekernf01/perturbation_benchmarking/blob/main/docs/reference.md#metadata-specifying-an-experiment) although this may get rearranged soon to make it easier to reuse. 
+The contents of `metadata.json` will describe what data to load, how to do the train-test split, what networks to test, how many genes to include, and tons of other information about the experiment. It is documented [here](https://github.com/ekernf01/perturbation_benchmarking/blob/main/docs/reference.md#metadata-specifying-an-experiment) although this may get rearranged soon to make it easier to reuse. 
 
 ### Installation
 
