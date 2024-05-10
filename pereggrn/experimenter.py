@@ -88,6 +88,7 @@ def get_default_metadata():
 def validate_metadata(
     experiment_name: str = None,
     metadata: dict = None,
+    input_folder: str = None,
 ) -> OrderedDict:
     """Make sure the user-provided metadata is OK, and fill in missing info with defaults.
 
@@ -100,7 +101,7 @@ def validate_metadata(
     """
     assert experiment_name is None or metadata is None, "You must provide experiment_name or metadata, but not both."
     if experiment_name is not None:
-        with open(os.path.join("experiments", experiment_name, "metadata.json")) as f:
+        with open(os.path.join(input_folder, experiment_name, "metadata.json")) as f:
             metadata = json.load(f, object_pairs_hook=OrderedDict)
         print("\n\nRaw metadata for experiment " + experiment_name + ":\n")
         print(yaml.dump(metadata))
@@ -112,7 +113,7 @@ def validate_metadata(
 
     # If metadata refers to another experiment, go find missing metadata there.
     if "refers_to" in metadata.keys():
-        with open(os.path.join("experiments", metadata["refers_to"], "metadata.json")) as f:
+        with open(os.path.join(input_folder, metadata["refers_to"], "metadata.json")) as f:
             other_metadata = json.load(f)
             try:
                 assert other_metadata["is_active"], "Referring to an inactive experiment is not allowed."
