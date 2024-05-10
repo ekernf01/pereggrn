@@ -1,14 +1,12 @@
 ### Benchmarking and evaluation tools
 
-This repo contains software that generated our benchmarking results. For full documentation, see the [benchmarking results repo](https://github.com/ekernf01/perturbation_benchmarking).
+This repo contains software that generated our [benchmarking results](https://github.com/ekernf01/perturbation_benchmarking). . 
 
 ### Usage
 
-This code is currently "trapped" in the very specific file/folder layout of our benchmarking repo mentioned above. Soon, we hope to allow a more flexible interface, similar to the following. 
+Consult `pereggrn -h`, or the [hot-to recipes](https://github.com/ekernf01/perturbation_benchmarking/blob/main/docs/how_to.md), or the [full reference](https://github.com/ekernf01/perturbation_benchmarking/blob/main/docs/reference.md).
 
-`pereggrn --config metadata.json --output experiments`
-
-The contents of `metadata.json` will describe what data to load, how to do the train-test split, what networks to test, how many genes to include, and tons of other information about the experiment. It is documented [here](https://github.com/ekernf01/perturbation_benchmarking/blob/main/docs/reference.md#metadata-specifying-an-experiment) although this may get rearranged soon to make it easier to reuse. 
+In brief: pereggrn will look for a `metadata.json` that describes what data to load, how to do the train-test split, what networks to test, how many genes to include, and tons of other information about the experiment. It will load in data and networks, split the data, train models, make predictions, and score the predictions. The main outputs are full expression forecasts and evaluation results.
 
 ### Installation
 
