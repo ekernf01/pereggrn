@@ -1,4 +1,4 @@
-### Benchmarking and evaluation tools
+### PEREGGRN: PErturbation Response Evaluation via a Grammar of Gene Regulatory Networks
 
 This repo contains software that generated our [benchmarking results](https://github.com/ekernf01/perturbation_benchmarking). . 
 
