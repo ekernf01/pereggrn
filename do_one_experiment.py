@@ -206,7 +206,7 @@ for i in conditions.index:
                 do_parallel = not args.no_parallel,
             )
             # Check output shape
-            if conditions.loc[i, "type_of_split"] == "timeseries":
+            if conditions.loc[i, "type_of_split"] != "timeseries":
                 assert predictions.shape == perturbed_expression_data_heldout_i.shape, f"There should be one prediction for each observation in the test data. Got {predictions.shape[0]}, expected {perturbed_expression_data_heldout_i.shape[0]}."
             else:
                 tcp = ['timepoint', 'cell_type', 'perturbation']
