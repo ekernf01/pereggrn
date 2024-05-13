@@ -64,9 +64,11 @@ except Exception as e:
 # Default args to this script for interactive use
 if args.experiment_name is None:
     args = Namespace(**{
-        "experiment_name": "1.8.1_1",
+        "experiment_name": "1.6.1_13",
         "amount_to_do": "missing_models",
         "save_trainset_predictions": False,
+        "output": "experiments",
+        "input": "experiments",
         "save_models": False,
         "skip_bad_runs": False, # Makes debug/traceback easier
         "no_parallel": True, # Makes debug/traceback easier
@@ -179,8 +181,8 @@ for i in conditions.index:
             predictions_train = None
             if conditions.loc[i, "type_of_split"] == "timeseries":
                 tcp = ['timepoint', 'cell_type', 'perturbation']
-                predictions_metadata       = perturbed_expression_data_heldout_i.obs[tcp + ["expression_level_after_perturbation"]].groupby(tcp).mean().reset_index()
-                predictions_train_metadata = perturbed_expression_data_train_i.obs[  tcp + ["expression_level_after_perturbation"]].groupby(tcp).mean().reset_index()
+                predictions_metadata       = perturbed_expression_data_heldout_i.obs[tcp + ["expression_level_after_perturbation"]].groupby(tcp).agg({"expression_level_after_perturbation": experimenter.stringy_mean}).reset_index()
+                predictions_train_metadata = perturbed_expression_data_train_i.obs[  tcp + ["expression_level_after_perturbation"]].groupby(tcp).agg({"expression_level_after_perturbation": experimenter.stringy_mean}).reset_index()
                 assert conditions.loc[i, "starting_expression"] == "control", "cannot currently reveal test data when doing time-series benchmarks"
             else:
                 if conditions.loc[i, "starting_expression"] == "control":
@@ -208,7 +210,7 @@ for i in conditions.index:
                 assert predictions.shape == perturbed_expression_data_heldout_i.shape, f"There should be one prediction for each observation in the test data. Got {predictions.shape[0]}, expected {perturbed_expression_data_heldout_i.shape[0]}."
             else:
                 tcp = ['timepoint', 'cell_type', 'perturbation']
-                expected_num_cells = perturbed_expression_data_heldout_i.obs[tcp + ["expression_level_after_perturbation"]].groupby(tcp).mean().reset_index().shape[0]
+                expected_num_cells = perturbed_expression_data_heldout_i.obs[tcp + ["expression_level_after_perturbation"]].agg({"expression_level_after_perturbation": experimenter.stringy_mean}).reset_index().shape[0]
                 assert predictions.shape[0] == expected_num_cells, f"There should be one prediction per cell type, timepoint, and perturbation. Got {predictions.shape[0]}, expected {expected_num_cells}."
 
             # Sometimes AnnData has trouble saving pandas bool columns and sets, and they aren't needed here anyway.
