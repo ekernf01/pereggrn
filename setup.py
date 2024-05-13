@@ -10,7 +10,7 @@ setup(
     description='Systematic benchmarking of in silico genetic perturbations',
     long_description=long_description,
 	long_description_content_type='text/markdown',
-    #url
+    scripts=['do_one_experiment.py'],
     author='Eric Kernfeld',
     author_email='eric.kern13@gmail.com',
     packages=find_packages(),
@@ -22,4 +22,9 @@ setup(
     ],
     python_requires=">=3.7", 
     url='https://github.com/ekernf01/pereggrn',
+    entry_points={
+        'console_scripts': [
+            'pereggrn = do_one_experiment:main'
+        ]
+    }
 )

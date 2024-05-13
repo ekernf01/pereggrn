@@ -12,29 +12,34 @@ import altair as alt
 import pereggrn.experimenter as experimenter
 from  scipy.stats import chi2_contingency
 from scipy.stats import f_oneway
+from sklearn.decomposition import PCA
 
-def test_targets_vs_non_targets( predicted, observed, baseline ): 
-    targets_positive = np.sign(np.round( predicted - baseline, 2))== 1
-    targets_negative = np.sign(np.round( predicted - baseline, 2))==-1
-    non_targets      = np.sign(np.round( predicted - baseline, 2))== 0
-    fc_observed = observed - baseline
-    if any(targets_positive) and any(targets_negative) and any(non_targets):
+def test_targets_vs_non_targets( predicted, observed, baseline_predicted, baseline_observed ): 
+    predicted = np.squeeze(np.array(predicted))
+    observed = np.squeeze(np.array(observed))
+    baseline_predicted = np.squeeze(np.array(baseline_predicted))
+    baseline_observed = np.squeeze(np.array(baseline_observed))
+    targets_positive = np.sign(np.round( predicted - baseline_predicted, 2))== 1
+    targets_negative = np.sign(np.round( predicted - baseline_predicted, 2))==-1
+    non_targets      = np.sign(np.round( predicted - baseline_predicted, 2))== 0
+    fc_observed = observed - baseline_observed
+    if targets_positive.any() and targets_negative.any() and non_targets.any():
         return f_oneway(
             fc_observed[targets_positive],
             fc_observed[targets_negative],
             fc_observed[non_targets],
         ).pvalue
-    elif any(non_targets) and any(targets_negative):
+    elif non_targets.any() and targets_negative.any():
         return f_oneway(
             fc_observed[targets_negative],
             fc_observed[non_targets],
         ).pvalue    
-    elif any(targets_positive) and any(targets_negative):
+    elif targets_positive.any() and targets_negative.any():
         return f_oneway(
             fc_observed[targets_positive],
             fc_observed[targets_negative],
         ).pvalue
-    elif any(targets_positive) and any(non_targets):
+    elif targets_positive.any() and non_targets.any():
         return f_oneway(
             fc_observed[targets_positive],
             fc_observed[non_targets],
@@ -43,43 +48,47 @@ def test_targets_vs_non_targets( predicted, observed, baseline ):
         return np.nan
     
 
-def fc_targets_vs_non_targets( predicted, observed, baseline ): 
-    targets_positive = np.sign(np.round( predicted - baseline, 2))== 1
-    targets_negative = np.sign(np.round( predicted - baseline, 2))==-1
-    non_targets      = np.sign(np.round( predicted - baseline, 2))== 0
-    fc_observed = observed - baseline
-    if any(targets_positive) and any(targets_negative) and any(non_targets):
+def fc_targets_vs_non_targets( predicted, observed, baseline_predicted, baseline_observed ): 
+    predicted = np.squeeze(np.array(predicted))
+    observed = np.squeeze(np.array(observed))
+    baseline_observed = np.squeeze(np.array(baseline_observed))
+    baseline_predicted = np.squeeze(np.array(baseline_predicted))
+    targets_positive = np.sign(np.round( predicted - baseline_predicted, 2))== 1
+    targets_negative = np.sign(np.round( predicted - baseline_predicted, 2))==-1
+    non_targets      = np.sign(np.round( predicted - baseline_predicted, 2))== 0
+    fc_observed = observed - baseline_observed
+    if targets_positive.any() and targets_negative.any() and non_targets.any():
         return fc_observed[targets_positive].mean() - fc_observed[targets_negative].mean()
-    elif any(non_targets) and any(targets_negative):
+    elif non_targets.any() and targets_negative.any():
         return fc_observed[non_targets].mean() - fc_observed[targets_negative].mean()
-    elif any(targets_positive) and any(targets_negative):
+    elif targets_positive.any() and targets_negative.any():
         return fc_observed[targets_positive].mean() - fc_observed[targets_negative].mean()
-    elif any(targets_positive) and any(non_targets):
+    elif targets_positive.any() and non_targets.any():
         return fc_observed[targets_positive].mean() - fc_observed[non_targets].mean()
     else:
         return np.nan
 
 METRICS = {
-    "spearman":                     lambda predicted, observed, baseline: [x for x in spearmanr(observed - baseline, predicted - baseline)][0],
-    "mae":                          lambda predicted, observed, baseline: np.abs(observed - predicted).mean(),
-    "mse":                          lambda predicted, observed, baseline: np.linalg.norm(observed - predicted)**2,
-    "mse_top_20":                   lambda predicted, observed, baseline: mse_top_n(predicted, observed, baseline, n=20),
-    "mse_top_100":                  lambda predicted, observed, baseline: mse_top_n(predicted, observed, baseline, n=100),
-    "mse_top_200":                  lambda predicted, observed, baseline: mse_top_n(predicted, observed, baseline, n=200),
-    "proportion_correct_direction": lambda predicted, observed, baseline: np.mean(np.sign(observed - baseline) == np.sign(predicted - baseline)),
-    "pvalue_effect_direction":      lambda predicted, observed, baseline: chi2_contingency(
+    "spearman":                     lambda predicted, observed, baseline_predicted, baseline_observed: [x for x in spearmanr(observed - baseline_observed,   predicted - baseline_predicted)][0],
+    "mae":                          lambda predicted, observed, baseline_predicted, baseline_observed: np.abs               (observed - baseline_observed - (predicted - baseline_predicted)).mean(),
+    "mse":                          lambda predicted, observed, baseline_predicted, baseline_observed: np.linalg.norm       (observed - baseline_observed - (predicted - baseline_predicted))**2,
+    "mse_top_20":                   lambda predicted, observed, baseline_predicted, baseline_observed: mse_top_n(predicted, observed, baseline_predicted, baseline_observed, n=20),
+    "mse_top_100":                  lambda predicted, observed, baseline_predicted, baseline_observed: mse_top_n(predicted, observed, baseline_predicted, baseline_observed, n=100),
+    "mse_top_200":                  lambda predicted, observed, baseline_predicted, baseline_observed: mse_top_n(predicted, observed, baseline_predicted, baseline_observed, n=200),
+    "proportion_correct_direction": lambda predicted, observed, baseline_predicted, baseline_observed: np.mean(np.sign(observed - baseline_observed) == np.sign(predicted - baseline_predicted)),
+    "pvalue_effect_direction":      lambda predicted, observed, baseline_predicted, baseline_observed: chi2_contingency(
         observed = pd.crosstab(
-            np.sign(np.round( observed - baseline, 2)),
-            np.sign(np.round(predicted - baseline, 2))
+            np.sign(np.round( observed - baseline_observed, 2)),
+            np.sign(np.round(predicted - baseline_predicted, 2))
         )
     ).pvalue,
     "pvalue_targets_vs_non_targets":  test_targets_vs_non_targets,
     "fc_targets_vs_non_targets": fc_targets_vs_non_targets,
 }
 
-def mse_top_n(predicted, observed, baseline, n):
-    top_n = rank(-np.abs(observed - baseline)) <= n
-    return np.linalg.norm(observed[top_n] - predicted[top_n]) ** 2
+def mse_top_n(predicted, observed, baseline_predicted, baseline_observed, n):
+    top_n = rank(-np.abs(observed - baseline_observed)) <= n
+    return np.linalg.norm((observed - baseline_observed - (predicted - baseline_predicted))[top_n]) ** 2
 
 def makeMainPlots(
     evaluationPerPert: pd.DataFrame, 
@@ -383,15 +392,34 @@ def evaluateCausalModel(
     evaluations  = []
     for i in predicted_expression.keys():
         perturbed_expression_data_train_i, perturbed_expression_data_heldout_i = get_current_data_split(i)
+        projector = PCA(n_components = 20)
+        projector.fit(perturbed_expression_data_train_i.X.toarray())
+        if (conditions.loc[i, "type_of_split"] == "timeseries"):
+            # For timeseries-versus-perturbseq splits, the baseline should be different between predicted and test data. 
+            # For the test data, it should be a **test-set** control sample from the same timepoint and cell type. 
+            # For the predictions, it should be a **prediction under no perturbations** from the same timepoint and cell type. 
+            # Because the upstream code selects perturbations to predict from the test set, the names of the controls should match the heldout data.
+            baseline_observed = perturbed_expression_data_heldout_i[[bool(b) for b in perturbed_expression_data_heldout_i.obs["is_control"]], :]
+            controls = perturbed_expression_data_heldout_i.obs.query("is_control")["perturbation"].unique()
+            baseline_predicted = predicted_expression[i][ predicted_expression[i].obs["perturbation"].isin(controls), : ]
+        else:
+            # For train-test splits of a single perturbset, usually the controls are all in the training data. 
+            # The same baseline can be used for the training and test data, and it needs to be extracted from the training data. 
+            baseline_observed = perturbed_expression_data_train_i[[bool(b) for b in perturbed_expression_data_train_i.obs["is_control"]], :]
+            baseline_predicted = perturbed_expression_data_train_i[[bool(b) for b in perturbed_expression_data_train_i.obs["is_control"]], :]
+
         evaluations = evaluateOnePrediction(
             expression = perturbed_expression_data_heldout_i if is_test_set else perturbed_expression_data_train_i,
             predictedExpression = predicted_expression[i],
-            baseline = perturbed_expression_data_train_i[[bool(b) for b in perturbed_expression_data_train_i.obs["is_control"]], :],
+            baseline_observed = baseline_observed,
+            baseline_predicted = baseline_predicted,
             doPlots=do_scatterplots,
             outputs = outputs,
             experiment_name = i,
             classifier = experimenter.train_classifier(perturbed_expression_data_train_i, target_key = classifier_labels),
-            do_parallel=do_parallel
+            projector = projector,
+            do_parallel=do_parallel,
+            is_timeseries = (conditions.loc[i, "type_of_split"] == "timeseries"),
         )
         # Add detail on characteristics of each gene that might make it more predictable
         evaluationPerPert[i],   _ = addGeneMetadata(evaluations[0], genes_considered_as="perturbations", adata=perturbed_expression_data_train_i, adata_test=perturbed_expression_data_heldout_i, path_to_accessory_data=path_to_accessory_data)
@@ -467,8 +495,10 @@ def evaluate_per_pert(
         all_perts: pd.Series,
         expression: np.matrix, 
         predictedExpression: np.matrix,
-        baseline: np.matrix, 
-        classifier, 
+        baseline_predicted: np.matrix, 
+        baseline_observed: np.matrix, 
+        classifier = None, 
+        projector = None,
     ) -> pd.DataFrame:
     """Calculate evaluation metrics for one perturbation. 
 
@@ -479,32 +509,38 @@ def evaluate_per_pert(
         predictedExpression (np.matrix): predicted expression, log1p-scale
         baseline (np.matrix): baseline expression, log1p-scale
         classifier (optional): None or sklearn classifier to judge results by cell type label accuracy
+        projector (optional): None or sklearn PCA object to project expression into a lower-dimensional space
 
     Returns:
         pd.DataFrame: Evaluation results for each perturbation
     """
     i = all_perts==pert
     predicted = safe_squeeze(predictedExpression[i, :].mean(axis=0))
-    observed = safe_squeeze(expression[i, :].mean(axis=0))
+    observed  = safe_squeeze(         expression[i, :].mean(axis=0))
     assert observed.shape[0] == expression.shape[1], f"For perturbation {pert}, observed and predicted are different shapes."
     def is_constant(x):
         return np.std(x) < 1e-12
-    if any(np.isnan(predicted)) or is_constant(predicted - baseline) or is_constant(observed - baseline):
+    if np.isnan(predicted).any() or is_constant(predicted - baseline_predicted) or is_constant(observed - baseline_observed):
         return pd.DataFrame({m:np.nan for m in METRICS.keys()}, index = [pert])
     else:
-        results = {k:m(predicted, observed, baseline) for k,m in METRICS.items()}
+        results = {k:m(predicted, observed, baseline_predicted, baseline_observed) for k,m in METRICS.items()}
         results["cell_type_correct"] = np.nan
         if classifier is not None:
             class_observed = classifier.predict(np.reshape(observed, (1, -1)))[0]
             class_predicted = classifier.predict(np.reshape(predicted, (1, -1)))[0]
             results["cell_type_correct"] = 1.0 * (class_observed == class_predicted)
+        results["distance_in_pca"] = np.nan
+        if projector is not None:
+            results["distance_in_pca"] = np.linalg.norm(projector.transform(observed.reshape(1, -1)) - projector.transform(predicted.reshape(1, -1)))**2
         return pd.DataFrame(results, index = [pert])
 
 def evaluate_across_perts(expression: anndata.AnnData, 
                           predictedExpression: anndata.AnnData, 
-                          baseline: anndata.AnnData, 
+                          baseline_predicted: anndata.AnnData, 
+                          baseline_observed: anndata.AnnData, 
                           experiment_name: str, 
-                          classifier, 
+                          classifier = None, 
+                          projector = None,
                           do_careful_checks: bool=False, 
                           do_parallel: bool = True) -> pd.DataFrame:
     """Evaluate performance for each perturbation.
@@ -512,9 +548,10 @@ def evaluate_across_perts(expression: anndata.AnnData,
     Args:
         expression (anndata.AnnData): actual expression, log1p-scale
         predictedExpression (anndata.AnnData): predicted expression, log1p-scale
-        baseline (anndata.AnnData): baseline expression, log1p-scale
+        baseline_predicted, baseline_observed (anndata.AnnData): baseline expression, log1p-scale
         experiment_name (str): name of the experiment
         classifier (optional): None or sklearn classifier to judge results by cell type label instead of logfc
+        projector (optional): None or sklearn PCA object to project expression into a lower-dimensional space
         do_careful_checks (bool, optional): ensure that perturbation and dose match between observed
             and predicted expression. Defaults to False.
 
@@ -534,24 +571,35 @@ def evaluate_across_perts(expression: anndata.AnnData,
             predictedExpression.obs.loc[:, ["perturbation", elap]].fillna(0)
         ):
             raise ValueError(f"Expression and predicted expression are different sizes or are differently named in experiment {experiment_name}.")
-    with parallel_config(temp_folder='/tmp', backend='threading'):
-        results = Parallel(n_jobs=cpu_count())(
-            delayed(evaluate_per_pert)(pert, expression.obs["perturbation"], expression.X, predictedExpression.X, baseline, classifier) 
+    if do_parallel:
+        with parallel_config(temp_folder='/tmp', backend='threading'):
+            results = Parallel(n_jobs=cpu_count())(
+                delayed(evaluate_per_pert)(pert, expression.obs["perturbation"], expression.X, predictedExpression.X, baseline_predicted, baseline_observed, classifier, projector) 
+                for pert in perts
+            )
+    else:
+        results = [
+            evaluate_per_pert(pert, expression.obs["perturbation"], expression.X, predictedExpression.X, baseline_predicted, baseline_observed, classifier, projector) 
             for pert in perts
-        )
+        ]
+
     results = pd.concat([r for r in results if type(r) == pd.DataFrame])
     return results
 
 def evaluateOnePrediction(
     expression: anndata.AnnData, 
     predictedExpression: anndata.AnnData, 
-    baseline: anndata.AnnData, 
+    baseline_predicted: anndata.AnnData, 
+    baseline_observed: anndata.AnnData, 
     outputs,
     experiment_name: str,
     doPlots=False, 
     classifier=None, 
+    projector=None,
     do_careful_checks = True, 
-    do_parallel: bool = True):
+    do_parallel: bool = True, 
+    is_timeseries: bool = False
+):
     '''Compare observed against predicted, for expression, fold-change, or cell type.
 
             Parameters:
@@ -562,32 +610,77 @@ def evaluateOnePrediction(
                         missing predictions, often one gene missing from all samples or one sample missing for all genes.
                         predictedExpression.obs must contain columns "perturbation" (symbol of targeted gene) 
                         and "expression_level_after_perturbation" (e.g. 0 for knockouts). 
-                    baseline (AnnData): 
+                    baseline_predicted, baseline_observed (AnnData): 
                         control expression level (log-scale)
                     outputs (str): Folder to save output in
                     classifier (sklearn classifier): 
-                        machine learning classifier to assign cell type to predicted expression profiles. 
+                        Random forest or other sklearn classifier to assign cell type to predicted expression profiles. 
                         Must have a predict() method capable of taking a value from expression or predictedExpression and returning a single class label. 
+                    projector (sklearn PCA):
+                        PCA or other sklearn dimension reduction object to project expression into a lower-dimensional space.
                     doPlots (bool): Make a scatterplot showing observed vs predicted, one dot per gene. 
                     do_careful_checks (bool): check gene name and expression level associated with each perturbation.
                         They must match between expression and predictionExpression.
+                    do_parallel (bool): use joblib to parallelize the evaluation across perturbations.
+                    is_timeseries (bool): for timeseries data we expect a different shape for observed and predicted. The default behavior is to compare
+                        predictions to test data within each cell type and timepoint, averaging together all test samples. Also to evaluate predictions 
+                        after different numbers of time-steps separately, even if multiple time-steps are returned inside the same AnnData object. 
+
             Returns:
                     Pandas DataFrame with Spearman correlation between predicted and observed 
                     log fold change over control.
     '''
     "log fold change using Spearman correlation and (optionally) cell fate classification."""
+    if is_timeseries:
+        # aggregate test data by ct and tp
+        expression = experimenter.averageWithinPerturbation(expression, ["timepoint", "cell_type"])
+        metrics            = {n:pd.DataFrame() for n in predictedExpression.obs["prediction_timescale"].unique()}
+        metrics_per_target = {n:pd.DataFrame() for n in predictedExpression.obs["prediction_timescale"].unique()}
+
+        # Evaluate separately for each value of prediction_timescale
+        for num_steps in predictedExpression.obs["prediction_timescale"].unique():
+            metrics[num_steps], metrics_per_target[num_steps] = evaluateOnePrediction(
+                expression = expression,
+                predictedExpression = predictedExpression[predictedExpression.obs["prediction_timescale"]==num_steps, :],
+                baseline_predicted = baseline_predicted,
+                baseline_observed  = baseline_observed,
+                outputs=outputs,
+                experiment_name=experiment_name,
+                doPlots=doPlots, 
+                classifier=classifier, 
+                projector=projector,
+                do_careful_checks = do_careful_checks, 
+                do_parallel = False, #do_parallel, #currently debugging; change this later!
+                is_timeseries = False
+            )
+            metrics[num_steps]["num_steps"] = num_steps
+            metrics_per_target[num_steps]["num_steps"] = num_steps
+        metrics = pd.concat(metrics.values())
+        metrics_per_target = pd.concat(metrics_per_target.values())
+        return metrics, metrics_per_target
+
     if not expression.X.shape == predictedExpression.X.shape:
         raise ValueError(f"expression shape is {expression.X.shape} and predictedExpression shape is {predictedExpression.X.shape} on {experiment_name}.")
-    if not expression.X.shape[1] == baseline.X.shape[1]:
+    if not expression.X.shape[1] == baseline_observed.X.shape[1]:
         raise ValueError(f"expression and baseline must have the same number of genes on experiment {experiment_name}.")
     if not len(predictedExpression.obs_names) == len(expression.obs_names):
         raise ValueError(f"expression and predictedExpression must have the same size .obs on experiment {experiment_name}.")
     if not all(predictedExpression.obs_names == expression.obs_names):
         raise ValueError(f"expression and predictedExpression must have the same indices on experiment {experiment_name}.")
-    baseline = baseline.X.mean(axis=0).squeeze()
+    baseline_predicted = baseline_predicted.X.mean(axis=0).squeeze()
+    baseline_observed = baseline_observed.X.mean(axis=0).squeeze()
     metrics_per_target = evaluate_across_targets(expression, predictedExpression)
-    metrics = evaluate_across_perts(expression, predictedExpression, baseline, experiment_name, classifier, do_careful_checks, do_parallel)
-    
+    metrics = evaluate_across_perts(
+            expression = expression,
+            predictedExpression = predictedExpression, 
+            baseline_predicted = baseline_predicted, 
+            baseline_observed = baseline_observed,
+            experiment_name = experiment_name, 
+            classifier = classifier, 
+            projector = projector,
+                do_careful_checks = do_careful_checks, 
+            do_parallel=do_parallel
+        )
     print("\nMaking some example plots")
     metrics["spearman"] = metrics["spearman"].astype(float)
     hardest = metrics["spearman"].idxmin()
@@ -613,9 +706,9 @@ def evaluateOnePrediction(
                 )
                 scatterplot = alt.Chart(
                     pd.DataFrame({
-                        "Observed log fc": observed-baseline, 
-                        "Predicted log fc": predicted-baseline, 
-                        "Baseline expression":baseline,
+                        "Observed log fc": observed-baseline_observed, 
+                        "Predicted log fc": predicted-baseline_predicted, 
+                        "Baseline expression":baseline_observed,
                     })
                 ).mark_circle().encode(
                     x="Observed log fc:Q",
