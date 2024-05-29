@@ -80,6 +80,7 @@ def get_default_metadata():
         "network_datasets":{"dense":{}},
         "low_dimensional_structure": "none",
         "low_dimensional_training": "svd",
+        "low_dimensional_value": None,
         "matching_method": "steady_state",
         "prediction_timescale": [1],
         "expand_prediction_timescale": False,
@@ -311,6 +312,7 @@ def do_one_run(
         matching_method                      = conditions.loc[i,"matching_method"],
         low_dimensional_structure            = conditions.loc[i,"low_dimensional_structure"],
         low_dimensional_training             = conditions.loc[i,"low_dimensional_training"],
+        low_dimensional_value                = conditions.loc[i,"low_dimensional_value"],
                                              # We can provide either one time point per condition, or a list to predict a whole trajectory at once. 
         prediction_timescale                 = conditions.loc[i,"prediction_timescale"] if metadata["expand_prediction_timescale"] else metadata["prediction_timescale"],
         do_parallel = do_parallel,
