@@ -672,7 +672,6 @@ def stringy_mean(x):
         x = [y.split(",") for y in x]
         x = [[float(z) for z in y] for y in x]
         x = np.array(x)
-        print(x)
         x = np.mean(x, axis = 0)
         return ",".join([str(y) for y in x])
 
