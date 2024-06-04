@@ -64,7 +64,7 @@ except Exception as e:
 # Default args to this script for interactive use
 if args.experiment_name is None:
     args = Namespace(**{
-        "experiment_name": "1.0_0",
+        "experiment_name": "1.5.2_0",
         "amount_to_do": "missing_models",
         "save_trainset_predictions": False,
         "output": "experiments",
@@ -197,20 +197,22 @@ for i in conditions.index:
                 else:
                     raise ValueError(f"Unexpected value of 'starting_expression' in metadata: { conditions.loc[i, 'starting_expression'] }")
             print("Running GRN.predict()...")
+            prediction_timescale = conditions.loc[i,"prediction_timescale"] if metadata["expand_prediction_timescale"] else metadata["prediction_timescale"]
             predictions   = grn.predict(
                 predictions = predictions,
                 predictions_metadata = predictions_metadata,
                 control_subtype = conditions.loc[i, "control_subtype"], 
                 feature_extraction_requires_raw_data = grn.feature_extraction.startswith("geneformer"),
-                prediction_timescale = conditions.loc[i,"prediction_timescale"] if metadata["expand_prediction_timescale"] else metadata["prediction_timescale"], 
+                prediction_timescale = prediction_timescale, 
                 do_parallel = not args.no_parallel,
             )
-            # Check output shape
+            # Output shape should match the heldout data, or some aggregation of it.
             if conditions.loc[i, "type_of_split"] != "timeseries":
                 assert predictions.shape == perturbed_expression_data_heldout_i.shape, f"There should be one prediction for each observation in the test data. Got {predictions.shape[0]}, expected {perturbed_expression_data_heldout_i.shape[0]}."
             else:
                 tcp = ['timepoint', 'cell_type', 'perturbation']
-                expected_num_cells = perturbed_expression_data_heldout_i.obs[tcp + ["expression_level_after_perturbation"]].agg({"expression_level_after_perturbation": experimenter.stringy_mean}).reset_index().shape[0]
+                expected_num_cells = perturbed_expression_data_heldout_i.obs[tcp + ["expression_level_after_perturbation"]].groupby(tcp).agg({"expression_level_after_perturbation": experimenter.stringy_mean}).reset_index().shape[0]
+                expected_num_cells = expected_num_cells * len(prediction_timescale)
                 assert predictions.shape[0] == expected_num_cells, f"There should be one prediction per cell type, timepoint, and perturbation. Got {predictions.shape[0]}, expected {expected_num_cells}."
 
             # Sometimes AnnData has trouble saving pandas bool columns and sets, and they aren't needed here anyway.
@@ -254,15 +256,7 @@ if args.amount_to_do in {"models", "missing_models", "evaluations"}:
         for i in conditions.index:
             print(f"- {i}", flush=True)
             perturbed_expression_data_train_i, perturbed_expression_data_heldout_i = get_current_data_split(i)
-            try:
-                assert predictions[i].shape[0]==perturbed_expression_data_heldout_i.shape[0]
-            except AssertionError:
-                print(f"Object shapes for condition {i}: (observed, predicted):", flush = True)
-                print((predictions[i].shape, perturbed_expression_data_heldout_i.shape), flush = True)
-                raise AssertionError("Predicted and observed anndata are different shapes.")
-            assert all(
-                        np.sort(predictions[i].obs_names) == np.sort(perturbed_expression_data_heldout_i.obs_names)
-                    ), f"For condition {i}, set of observations is different between observed and predicted."        
+            evaluator.assert_perturbation_metadata_match(predictions[i], perturbed_expression_data_heldout_i)       
             del perturbed_expression_data_train_i
             del perturbed_expression_data_heldout_i
             gc.collect()

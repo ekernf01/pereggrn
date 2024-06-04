@@ -393,7 +393,10 @@ def evaluateCausalModel(
     for i in predicted_expression.keys():
         perturbed_expression_data_train_i, perturbed_expression_data_heldout_i = get_current_data_split(i)
         projector = PCA(n_components = 20)
-        projector.fit(perturbed_expression_data_train_i.X.toarray())
+        try:
+            projector.fit(perturbed_expression_data_train_i.X.toarray())
+        except AttributeError:
+            projector.fit(perturbed_expression_data_train_i.X)        
         if (conditions.loc[i, "type_of_split"] == "timeseries"):
             # For timeseries-versus-perturbseq splits, the baseline should be different between predicted and test data. 
             # For the test data, it should be a **test-set** control sample from the same timepoint and cell type. 
@@ -730,3 +733,24 @@ def evaluateOnePrediction(
     metrics["perturbation"] = metrics.index
     return metrics, metrics_per_target
     
+def assert_perturbation_metadata_match(
+        predicted: anndata.AnnData,
+        observed: anndata.AnnData, 
+        fields_to_check = ["perturbation", "expression_level_after_perturbation"]
+    ):
+    """Raise an error if the perturbation metadata does not match between observed and predicted anndata."""
+    try:
+        assert predicted.shape[0]==observed.shape[0]
+    except AssertionError:
+        print(f"Object shapes for condition {i}: (observed, predicted):", flush = True)
+        print((predicted.shape, observed.shape), flush = True)
+        raise AssertionError("Predicted and observed anndata are different shapes.")
+    predicted.obs_names = observed.obs_names
+    for c in ["perturbation", "expression_level_after_perturbation"]:
+        if not all(
+                predicted.obs[c].astype(str) == observed.obs[c].astype(str)
+            ):
+            print(predicted.obs[c].head())
+            print(observed.obs[c].head())
+            raise AssertionError(f"{c} is different between observed and predicted.")
+    return
