@@ -8,11 +8,13 @@ import anndata
 from scipy.stats import spearmanr as spearmanr
 from scipy.stats import rankdata as rank
 import os 
+import re
 import altair as alt
 import pereggrn.experimenter as experimenter
 from  scipy.stats import chi2_contingency
 from scipy.stats import f_oneway
 from sklearn.decomposition import PCA
+from typing import Tuple, Dict, List
 
 def test_targets_vs_non_targets( predicted, observed, baseline_predicted, baseline_observed ): 
     predicted = np.squeeze(np.array(predicted))
@@ -377,15 +379,25 @@ def evaluateCausalModel(
     do_scatterplots = True, 
     path_to_accessory_data: str = "../accessory_data",
     do_parallel: bool = True,
-):
+    type_of_split: str = "interventional",
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """Compile plots and tables comparing heldout data and predictions for same. 
 
     Args:
         get_current_data_split: function to retrieve tuple of anndatas (train, test)
         predicted_expression: dict with keys equal to the index in "conditions" and values being anndata objects. 
         is_test_set: True if the predicted_expression is on the test set and False if predicted_expression is on the training data.
+            This is just used to select the right observations to compare to the predictions.
         conditions (pd.DataFrame): Metadata for the different combinations used in this experiment. 
         outputs (String): Saves output here.
+        classifier_labels (String): Column in conditions to use as the target for the classifier.
+        do_scatterplots (bool): Make scatterplots of observed vs predicted expression.
+        path_to_accessory_data (str): We use this to add gene metadata on LoF intolerance.
+        do_parallel (bool): Use joblib to parallelize the evaluation across perturbations. Recommended unless you are debugging (it ruins tracebacks).
+        type_of_split: "timeseries", "interventional", or another option from experimenter.splitDataWrapper(). For most values of this parameter,
+            the evaluation will assume you have provided one prediction per test sample. For "timeseries", the evaluation will assume you have provided
+            one prediction per combination of cell_type, timepoint, prediction_timescale, and perturbation. In general the held-out data will have more 
+            replication than that, and will have no prediction_timescale labels; just timepoint labels. 
     """
     evaluationPerPert = {}
     evaluationPerTarget = {}
@@ -397,43 +409,124 @@ def evaluateCausalModel(
             projector.fit(perturbed_expression_data_train_i.X.toarray())
         except AttributeError:
             projector.fit(perturbed_expression_data_train_i.X)        
-        if (conditions.loc[i, "type_of_split"] == "timeseries"):
-            # For timeseries-versus-perturbseq splits, the baseline should be different between predicted and test data. 
-            # For the test data, it should be a **test-set** control sample from the same timepoint and cell type. 
-            # For the predictions, it should be a **prediction under no perturbations** from the same timepoint and cell type. 
-            # Because the upstream code selects perturbations to predict from the test set, the names of the controls should match the heldout data.
-            baseline_observed = perturbed_expression_data_heldout_i[[bool(b) for b in perturbed_expression_data_heldout_i.obs["is_control"]], :]
-            controls = perturbed_expression_data_heldout_i.obs.query("is_control")["perturbation"].unique()
-            baseline_predicted = predicted_expression[i][ predicted_expression[i].obs["perturbation"].isin(controls), : ]
-        else:
-            # For train-test splits of a single perturbset, usually the controls are all in the training data. 
-            # The same baseline can be used for the training and test data, and it needs to be extracted from the training data. 
-            baseline_observed = perturbed_expression_data_train_i[[bool(b) for b in perturbed_expression_data_train_i.obs["is_control"]], :]
-            baseline_predicted = perturbed_expression_data_train_i[[bool(b) for b in perturbed_expression_data_train_i.obs["is_control"]], :]
+        all_test_data = perturbed_expression_data_heldout_i if is_test_set else perturbed_expression_data_train_i
+        
+        evaluations = {}
+        if "prediction_timescale" not in perturbed_expression_data_heldout_i.obs.columns:
+            perturbed_expression_data_heldout_i.obs["prediction_timescale"] = 1
+        if "prediction_timescale" not in predicted_expression[i].obs.columns:
+            predicted_expression[i].obs["prediction_timescale"] = 1
+        timescales = predicted_expression[i].obs["prediction_timescale"].unique()
+        for prediction_timescale in timescales:
+            if (conditions.loc[i, "type_of_split"] == "timeseries"):
+                # For timeseries-versus-perturbseq splits, baseline and observed-to-predicted matching are more complicated. See `docs/timeseries_prediction.md` for details.
+                predicted_expression[i], current_heldout = select_comparable_observed_and_predicted(
+                    conditions, 
+                    predicted_expression, 
+                    all_test_data[all_test_data.obs["prediction_timescale"] == prediction_timescale, :].copy(), 
+                    i, 
+                )   
+                # The sensible baseline differs between predicted and test data. 
+                # For the test data, it should be a **test-set** control sample from the same timepoint and cell type. 
+                # For the predictions, it should be a **prediction under no perturbations** from the same timepoint and cell type. 
+                # Because the upstream code selects perturbations to predict from the test set, the names of the controls should match the heldout data.
+                baseline_observed = current_heldout[[bool(b) for b in current_heldout.obs["is_control"]], :]
+                controls = all_test_data.obs.query("is_control")["perturbation"].unique()
+                baseline_predicted = predicted_expression[i][ predicted_expression[i].obs["perturbation"].isin(controls), : ]
+            else:
+                current_heldout = all_test_data
+                # For train-test splits of a single perturbset, the controls are all in the training data. 
+                # The same baseline can be used for the training and test data, and it needs to be extracted from the training data. 
+                baseline_observed = perturbed_expression_data_train_i[[bool(b) for b in perturbed_expression_data_train_i.obs["is_control"]], :]
+                baseline_predicted = perturbed_expression_data_train_i[[bool(b) for b in perturbed_expression_data_train_i.obs["is_control"]], :]
 
-        evaluations = evaluateOnePrediction(
-            expression = perturbed_expression_data_heldout_i if is_test_set else perturbed_expression_data_train_i,
-            predictedExpression = predicted_expression[i],
-            baseline_observed = baseline_observed,
-            baseline_predicted = baseline_predicted,
-            doPlots=do_scatterplots,
-            outputs = outputs,
-            experiment_name = i,
-            classifier = experimenter.train_classifier(perturbed_expression_data_train_i, target_key = classifier_labels),
-            projector = projector,
-            do_parallel=do_parallel,
-            is_timeseries = (conditions.loc[i, "type_of_split"] == "timeseries"),
-        )
-        # Add detail on characteristics of each gene that might make it more predictable
-        evaluationPerPert[i],   _ = addGeneMetadata(evaluations[0], genes_considered_as="perturbations", adata=perturbed_expression_data_train_i, adata_test=perturbed_expression_data_heldout_i, path_to_accessory_data=path_to_accessory_data)
-        evaluationPerTarget[i], _ = addGeneMetadata(evaluations[1], genes_considered_as="targets"      , adata=perturbed_expression_data_train_i, adata_test=perturbed_expression_data_heldout_i, path_to_accessory_data=path_to_accessory_data)
-        evaluationPerPert[i]["index"]   = i
-        evaluationPerTarget[i]["index"] = i
+            evaluations[prediction_timescale] = evaluateOnePrediction(
+                expression = current_heldout,
+                predictedExpression = predicted_expression[i],
+                baseline_observed = baseline_observed,
+                baseline_predicted = baseline_predicted,
+                doPlots=do_scatterplots,
+                outputs = outputs,
+                experiment_name = i,
+                classifier = experimenter.train_classifier(perturbed_expression_data_train_i, target_key = classifier_labels),
+                projector = projector,
+                do_parallel=do_parallel,
+                is_timeseries = (conditions.loc[i, "type_of_split"] == "timeseries"),
+            )
+            # Add detail on characteristics of each gene that might make it more predictable
+            evaluations[prediction_timescale][0], _ = addGeneMetadata(evaluations[prediction_timescale][0], genes_considered_as="perturbations", adata=perturbed_expression_data_train_i, adata_test=perturbed_expression_data_heldout_i, path_to_accessory_data=path_to_accessory_data)
+            evaluations[prediction_timescale][1], _ = addGeneMetadata(evaluations[prediction_timescale][1], genes_considered_as="targets"      , adata=perturbed_expression_data_train_i, adata_test=perturbed_expression_data_heldout_i, path_to_accessory_data=path_to_accessory_data)
+            evaluations[prediction_timescale][0]["index"] = i
+            evaluations[prediction_timescale][1]["index"] = i
+            evaluations[prediction_timescale][0]["index"] = prediction_timescale
+            evaluations[prediction_timescale][1]["index"] = prediction_timescale
+            
+        evaluationPerPert  [i] = pd.concat([evaluations[t][0] for t in timescales])
+        evaluationPerTarget[i] = pd.concat([evaluations[t][1] for t in timescales])
 
     # Concatenate and add some extra info
-    evaluationPerPert = postprocessEvaluations(evaluationPerPert, conditions)
+    evaluationPerPert   = postprocessEvaluations(evaluationPerPert, conditions)
     evaluationPerTarget = postprocessEvaluations(evaluationPerTarget, conditions)
     return evaluationPerPert, evaluationPerTarget
+
+def select_comparable_observed_and_predicted(
+    conditions: pd.DataFrame, 
+    predicted_expression: Dict[int, anndata.AnnData], 
+    perturbed_expression_data_heldout_i: anndata.AnnData, 
+    i: int, 
+) -> Tuple[anndata.AnnData, anndata.AnnData]:
+    """Select a set of predictions that are comparable to the test data, and aggregate the test data within each combination of
+    perturbed gene, timepoint, and cell_type. See docs/timeseries_prediction.md for details.
+    This function should NOT be run unless type_of_split is "timeseries".
+
+    Args:
+        conditions (pd.DataFrame): experimental conditions
+        predicted_expression (Dict[int, anndata.AnnData]): all predictions in a dict. 
+        perturbed_expression_data_heldout_i (anndata.AnnData): the heldout data
+        i (int): which condition you are currently preparing to evaluate
+        prediction_timescale: We select only predictions matching this value. This will help us separately evaluate e.g. CellOracle with 1 versus 3 iterations.
+
+    Returns:
+        Tuple[anndata.AnnData, anndata.AnnData]: the test data and the predictions, with a one-to-one match between them.
+    """
+    # Set a default about handling of time
+    if pd.isnull(conditions.loc[i, "does_simulation_progress"]):
+        backends_that_give_a_fuck_about_the_concept_of_time = [
+            "ggrn_docker_backend_prescient",
+            "ggrn_docker_backend_timeseries_baseline",
+            "autoregressive"
+        ]
+        conditions.loc[i, "does_simulation_progress"] = re.sub(conditions.loc[i, "regression_method"], ".*/", "") in backends_that_give_a_fuck_about_the_concept_of_time
+    # maintain backwards compatibility
+    if not "timepoint" in perturbed_expression_data_heldout_i.obs.columns: 
+        perturbed_expression_data_heldout_i.obs["timepoint"] = 0
+    if not "cell_type" in perturbed_expression_data_heldout_i.obs.columns: 
+        perturbed_expression_data_heldout_i.obs["cell_type"] = 0
+    # For timeseries datasets, we just return a single prediction for each timepoint and cell_type, not one for each test set cell.
+    test_data = experimenter.averageWithinPerturbation(perturbed_expression_data_heldout_i, ["timepoint", "cell_type"])
+    # Now we will select predictions for each combo of timepoint, cell_type, and perturbation in the heldout data.
+    predicted_expression[i].obs["takedown_timepoint"] = predicted_expression[i].obs["timepoint"]
+    if conditions.loc[i, "does_simulation_progress"]:
+        predicted_expression[i].obs.loc[:, "takedown_timepoint"] += predicted_expression[i].obs.loc[:, "prediction_timescale"]
+
+    test_data.obs["observed_index"] = test_data.obs.index.copy()
+    predicted_expression[i].obs["predicted_index"] = predicted_expression[i].obs.index.copy()
+    
+    # this merge is *john mulaney voice* "sensitive" about data types
+    test_data.obs["perturbation"] = test_data.obs["perturbation"].astype("str")
+    predicted_expression[i].obs["perturbation"] = predicted_expression[i].obs["perturbation"].astype("str")
+    test_data.obs["cell_type"] = test_data.obs["cell_type"].astype("str")
+    predicted_expression[i].obs["cell_type"] = predicted_expression[i].obs["cell_type"].astype("str")
+    test_data.obs["timepoint"] = test_data.obs["timepoint"].astype("Int64")
+    predicted_expression[i].obs["takedown_timepoint"] = predicted_expression[i].obs["takedown_timepoint"].astype("Int64")
+    matched_predictions = pd.merge(
+        test_data.obs[              [         'timepoint',          "cell_type", 'perturbation', "observed_index"]], 
+        predicted_expression[i].obs[['takedown_timepoint',          "cell_type", 'perturbation', "predicted_index"]], 
+        left_on =['timepoint',          "cell_type", 'perturbation'],
+        right_on=['takedown_timepoint', "cell_type", 'perturbation'],
+        how='inner', 
+    )
+    return test_data[matched_predictions["observed_index"]], predicted_expression[i][matched_predictions["predicted_index"], :]
 
 def safe_squeeze(X):
     """Squeeze a matrix when you don't know if it's sparse-format or not.
@@ -634,34 +727,6 @@ def evaluateOnePrediction(
                     log fold change over control.
     '''
     "log fold change using Spearman correlation and (optionally) cell fate classification."""
-    if is_timeseries:
-        # aggregate test data by ct and tp
-        expression = experimenter.averageWithinPerturbation(expression, ["timepoint", "cell_type"])
-        metrics            = {n:pd.DataFrame() for n in predictedExpression.obs["prediction_timescale"].unique()}
-        metrics_per_target = {n:pd.DataFrame() for n in predictedExpression.obs["prediction_timescale"].unique()}
-
-        # Evaluate separately for each value of prediction_timescale
-        for num_steps in predictedExpression.obs["prediction_timescale"].unique():
-            metrics[num_steps], metrics_per_target[num_steps] = evaluateOnePrediction(
-                expression = expression,
-                predictedExpression = predictedExpression[predictedExpression.obs["prediction_timescale"]==num_steps, :],
-                baseline_predicted = baseline_predicted,
-                baseline_observed  = baseline_observed,
-                outputs=outputs,
-                experiment_name=experiment_name,
-                doPlots=doPlots, 
-                classifier=classifier, 
-                projector=projector,
-                do_careful_checks = do_careful_checks, 
-                do_parallel = False, #do_parallel, #currently debugging; change this later!
-                is_timeseries = False
-            )
-            metrics[num_steps]["num_steps"] = num_steps
-            metrics_per_target[num_steps]["num_steps"] = num_steps
-        metrics = pd.concat(metrics.values())
-        metrics_per_target = pd.concat(metrics_per_target.values())
-        return metrics, metrics_per_target
-
     if not expression.X.shape == predictedExpression.X.shape:
         raise ValueError(f"expression shape is {expression.X.shape} and predictedExpression shape is {predictedExpression.X.shape} on {experiment_name}.")
     if not expression.X.shape[1] == baseline_observed.X.shape[1]:
@@ -731,7 +796,7 @@ def evaluateOnePrediction(
                 except Exception as e:
                     print(f"Altair saver failed with error {repr(e)}")
     metrics["perturbation"] = metrics.index
-    return metrics, metrics_per_target
+    return [metrics, metrics_per_target]
     
 def assert_perturbation_metadata_match(
         predicted: anndata.AnnData,
@@ -742,7 +807,7 @@ def assert_perturbation_metadata_match(
     try:
         assert predicted.shape[0]==observed.shape[0]
     except AssertionError:
-        print(f"Object shapes for condition {i}: (observed, predicted):", flush = True)
+        print(f"Object shapes: (observed, predicted):", flush = True)
         print((predicted.shape, observed.shape), flush = True)
         raise AssertionError("Predicted and observed anndata are different shapes.")
     predicted.obs_names = observed.obs_names

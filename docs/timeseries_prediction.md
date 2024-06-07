@@ -12,12 +12,9 @@ Here's what we want.
 
 ### TODOs
 
-- search this doc for orphan todos
-- test the new eval code. make sure it gives the right anndata sizes.
-- there is still an unresolved conflict between how three parts of the codebase handle `prediction_timescale`. 
-    - On the one hand, we want to save compute by fitting models once, then simulating whole trajectories. We have now built some nice infrastructure to do this. But it yields weird-looking experiment metadata and weird, large predicted expression objects. 
-    - On the other hand, the infrastructure, especially the metadata parsing, has a limited ability to handle scenarios where one method returns a full trajectory and another does not, or when methods use different `prediction_timescale`'s. Those kinds of experiments will be slow to run and awkward to specify. I guess we'll avoid them for now?
-    - Also on the other hand, the current evaluation code lumps together all trajectories and evaluates them all jointly, matching each prediction to a sensible observation. This is not gonna work at all. We should instead stratify by `prediction_timescale`. There is a TODO in evaluator.py about this.
+- test the new eval code. make sure it gives the right anndata sizes. make sure it handles trajectories. make sure it handles datasets where reps are not merged.
+- look back at the desired evaluation metrics and see what still needs to happen.
+- make velocity-style plots? 
 
 ### New interfaces for making predictions 
 
@@ -52,7 +49,6 @@ Based on past work, here are some signals that we might still have success predi
 - Short-term change in cell type proportions. CellOracle focuses on this.
 - Long-term change in cell type proportions. PRESCIENT focuses on this.
 - Cell type-specific TF activity: rank the TF's by the magnitude of the change predicted upon knockout, e.g. cosine similarity of velocity before and after KO. scKINETICS and CellOracle focus on this.
-- **TODO**: implement these.
 
 Here are some best guesses about which predicted timepoints to compare against which test timepoints.
 
@@ -86,13 +82,11 @@ The default behavior should be:
 - For multiple predictions made after different numbers of time-steps, evaluate these separately, even if they are returned inside the same AnnData object. This will require new code inside of `evaluator.evaluateCausalModel` to iterate over values of `predictions.obs["prediction_timescale"]`.
 - Compare predictions to test data within each cell type and timepoint, averaging together all test samples. This will require new code inside of `evaluator.evaluateCausalModel` to do the averaging.
 - `evaluator.evaluateCausalModel` should still return a tuple of dataframes. The dataframes should have mostly the same columns -- I don't remember if `timepoint`, `cell_type`, and `prediction_timescale` are new or not. 
-- **TODO**: implement this. 
 
 #### New baseline methods
 
 For the previous part of the project, an important component of the results came from using non-informative baselines, e.g. predicting the median of the training data or using the empty network for network-based feature selection. What are some simple or non-informative baselines for prediction of a knockout of gene $G$ at time $t+1$ starting the simulation from time $t$?
 
-- **TODO**: this is done. 
 - return $X_t$ (no development)
     - We could probably implement this via the existing autoregressive backend. It roughly does X = X_0 + BX_0, and we can just set B=0 via an empty network, a high penalty param, or a rank-0 matrix. But does any of these options not choke the software??? This is not yet implemented and I'm not sure if it's worth doing.
 - return $X_{t+1}$ (development proceeds and is not affected by KO)
