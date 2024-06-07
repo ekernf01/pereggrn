@@ -80,9 +80,11 @@ def get_default_metadata():
         "network_datasets":{"dense":{}},
         "low_dimensional_structure": "none",
         "low_dimensional_training": "svd",
+        "low_dimensional_value": None,
         "matching_method": "steady_state",
         "prediction_timescale": [1],
         "expand_prediction_timescale": False,
+        "does_simulation_progress": None,
     }
 
 def validate_metadata(
@@ -311,6 +313,7 @@ def do_one_run(
         matching_method                      = conditions.loc[i,"matching_method"],
         low_dimensional_structure            = conditions.loc[i,"low_dimensional_structure"],
         low_dimensional_training             = conditions.loc[i,"low_dimensional_training"],
+        low_dimensional_value                = conditions.loc[i,"low_dimensional_value"],
                                              # We can provide either one time point per condition, or a list to predict a whole trajectory at once. 
         prediction_timescale                 = conditions.loc[i,"prediction_timescale"] if metadata["expand_prediction_timescale"] else metadata["prediction_timescale"],
         do_parallel = do_parallel,
@@ -670,7 +673,6 @@ def stringy_mean(x):
         x = [y.split(",") for y in x]
         x = [[float(z) for z in y] for y in x]
         x = np.array(x)
-        print(x)
         x = np.mean(x, axis = 0)
         return ",".join([str(y) for y in x])
 
@@ -681,21 +683,38 @@ def averageWithinPerturbation(ad: anndata.AnnData, confounders = []):
         ad (anndata.AnnData): Object conforming to the validity checks in the pereggrn_perturbations module.
         confounders: other factors to consider when averaging. For instance, you may want to stratify by cell cycle phase. 
     """
-    grouping_variables = ["perturbation"] + confounders
-    new_obs = ad.obs[grouping_variables + ["expression_level_after_perturbation"]].groupby(grouping_variables).agg({"expression_level_after_perturbation": stringy_mean}).reset_index()
+    grouping_variables = ["perturbation", "is_control", "perturbation_type"] + confounders
+    new_obs = ad.obs[grouping_variables + ["expression_level_after_perturbation"]].groupby(grouping_variables, observed = True).agg({"expression_level_after_perturbation": stringy_mean}).reset_index()
+    # For backwards compatibility, we keep the perturbation order and the index the same as it was in a previous version of this code.
+    original_order = ad.obs["perturbation"].unique()
+    original_order = {original_order[i]:i for i in range(len(original_order))}
+    new_obs["perturbation"] = new_obs["perturbation"].astype("str")
+    new_obs = new_obs.sort_values(by = ["perturbation"], key=lambda x: x.map(original_order), inplace = False)
+    try:
+        new_obs.index = original_order.copy()
+    except:
+        pass
     new_ad = anndata.AnnData(
         X = np.zeros((len(new_obs.index), len(ad.var_names))),
         obs = new_obs,
         var = ad.var,
         dtype = np.float32
     )
+    new_ad.raw = anndata.AnnData(
+        X = np.zeros((len(new_obs.index), len(ad.raw.var_names))),
+        obs = new_obs,
+        var = ad.raw.var,
+        dtype = np.float32
+    )
+    new_obs["temp_int_index"] = range(len(new_ad.obs_names))
     for i,obs_row in new_obs.iterrows():
         p_idx = True
         for g in grouping_variables:
             p_idx = p_idx & (ad.obs[g]==obs_row[g])
-        new_ad[i,].X = ad[p_idx,:].X.mean(0)
+        new_ad[i,:].X = ad[p_idx,:].X.mean(0)
+        new_ad.raw.X[obs_row["temp_int_index"],:] = ad[p_idx,:].raw.X.sum(0)
+
     new_ad.obs = new_ad.obs.astype(dtype = {c:ad.obs.dtypes[c] for c in new_ad.obs.columns}, copy = True)
-    new_ad.raw = ad.copy()
     new_ad.uns = ad.uns.copy()
     return new_ad
 
