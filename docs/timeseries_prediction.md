@@ -10,12 +10,6 @@ Here's what we want.
 - The interface between GGRN and benchmarking code will have to change -- it cannot currently carry all this info. 
 - The evaluation code will have to change, since the shape of the output will change and there are limits on how literally we can interpret the output. More detail below. 
 
-### TODOs
-
-- test the new eval code. make sure it gives the right anndata sizes. make sure it handles trajectories. make sure it handles datasets where reps are not merged.
-- look back at the desired evaluation metrics and see what still needs to happen.
-- make velocity-style plots? 
-
 ### New interfaces for making predictions 
 
 #### Pereggrn call to ggrn
