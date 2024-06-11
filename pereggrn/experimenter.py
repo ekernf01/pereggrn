@@ -714,7 +714,6 @@ def averageWithinPerturbation(ad: anndata.AnnData, confounders = []):
         new_ad[i,:].X = ad[p_idx,:].X.mean(0)
         new_ad.raw.X[obs_row["temp_int_index"],:] = ad[p_idx,:].raw.X.sum(0)
 
-    new_ad.obs = new_ad.obs.astype(dtype = {c:ad.obs.dtypes[c] for c in new_ad.obs.columns}, copy = True)
     new_ad.uns = ad.uns.copy()
     return new_ad
 
