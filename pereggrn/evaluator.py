@@ -458,13 +458,14 @@ def evaluateCausalModel(
             evaluations[prediction_timescale][1], _ = addGeneMetadata(evaluations[prediction_timescale][1], genes_considered_as="targets"      , adata=perturbed_expression_data_train_i, adata_test=perturbed_expression_data_heldout_i, path_to_accessory_data=path_to_accessory_data)
             evaluations[prediction_timescale][0]["index"] = i
             evaluations[prediction_timescale][1]["index"] = i
-            evaluations[prediction_timescale][0]["index"] = prediction_timescale
-            evaluations[prediction_timescale][1]["index"] = prediction_timescale
+            evaluations[prediction_timescale][0]["prediction_timescale"] = prediction_timescale
+            evaluations[prediction_timescale][1]["prediction_timescale"] = prediction_timescale
             
         evaluationPerPert  [i] = pd.concat([evaluations[t][0] for t in timescales])
         evaluationPerTarget[i] = pd.concat([evaluations[t][1] for t in timescales])
 
     # Concatenate and add some extra info
+    # postprocessEvaluations wants a list of datafrmaes with one dataframe per row in conditions
     evaluationPerPert   = postprocessEvaluations(evaluationPerPert, conditions)
     evaluationPerTarget = postprocessEvaluations(evaluationPerTarget, conditions)
     return evaluationPerPert, evaluationPerTarget

@@ -24,7 +24,7 @@ setup(
     url='https://github.com/ekernf01/pereggrn',
     entry_points={
         'console_scripts': [
-            'pereggrn = do_one_experiment:main'
+            'pereggrn = do_one_experiment'
         ]
     }
 )
