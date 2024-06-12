@@ -64,7 +64,7 @@ except Exception as e:
 # Default args to this script for interactive use
 if args.experiment_name is None:
     args = Namespace(**{
-        "experiment_name": "1.0_11",
+        "experiment_name": "1.2.2_11",
         "amount_to_do": "missing_models",
         "save_trainset_predictions": False,
         "output": "experiments",
@@ -151,7 +151,7 @@ for i in conditions.index:
                     peak_ram = [p for p in peak_ram if ("B" in p)][0]
                     peak_ram = peak_ram.split("│")[2].strip()
                 except:
-                    print(f"Memory profiling results are not as expected. You can find the memray output in {train_mem_file}.")
+                    print(f"Memory profiling results are not as expected, but you can find the raw memray output in {train_mem_file} and try to parse it yourself.")
                     peak_ram = np.NAN
                 pd.DataFrame({"walltime (seconds)":train_time, "peak RAM": peak_ram}, index = [i]).to_csv(train_time_file)
             except Exception as e: 
@@ -330,3 +330,18 @@ else:
     raise ValueError("--amount_to_do must be one of the allowed options (see them on the help page by passing the -h flag).")
 
 print("Experiment done at " + str(datetime.datetime.now()), flush = True)
+
+# Avoid a useless error by defining main.
+# This has to do with how python packages typically make command line scripts available.
+# A way generally considered better would be to put all the code in main() or parse_args(), then call main() at the end.
+# This helps if you want to import this script and do e.g. unit tests on it. 
+def main(some_args):
+    return
+
+# def parse_arguments():
+#     argument_parse_code
+#     return arguments
+
+# if __name__ == '__main__':
+#     arguments = parse_arguments()
+#     main(*arguments)

@@ -413,9 +413,9 @@ def evaluateCausalModel(
         
         evaluations = {}
         if "prediction_timescale" not in perturbed_expression_data_heldout_i.obs.columns:
-            perturbed_expression_data_heldout_i.obs["prediction_timescale"] = 1
+            perturbed_expression_data_heldout_i.obs["prediction_timescale"] = conditions.loc[i, "prediction_timescale"]
         if "prediction_timescale" not in predicted_expression[i].obs.columns:
-            predicted_expression[i].obs["prediction_timescale"] = 1
+            predicted_expression[i].obs["prediction_timescale"] = conditions.loc[i, "prediction_timescale"]
         timescales = predicted_expression[i].obs["prediction_timescale"].unique()
         for prediction_timescale in timescales:
             if (conditions.loc[i, "type_of_split"] == "timeseries"):
@@ -453,7 +453,7 @@ def evaluateCausalModel(
                 do_parallel=do_parallel,
                 is_timeseries = (conditions.loc[i, "type_of_split"] == "timeseries"),
             )
-            # Add detail on characteristics of each gene that might make it more predictable
+            # Add detail on characteristics of each gene that might make itq more predictable
             evaluations[prediction_timescale][0], _ = addGeneMetadata(evaluations[prediction_timescale][0], genes_considered_as="perturbations", adata=perturbed_expression_data_train_i, adata_test=perturbed_expression_data_heldout_i, path_to_accessory_data=path_to_accessory_data)
             evaluations[prediction_timescale][1], _ = addGeneMetadata(evaluations[prediction_timescale][1], genes_considered_as="targets"      , adata=perturbed_expression_data_train_i, adata_test=perturbed_expression_data_heldout_i, path_to_accessory_data=path_to_accessory_data)
             evaluations[prediction_timescale][0]["index"] = i
@@ -463,11 +463,16 @@ def evaluateCausalModel(
             
         evaluationPerPert  [i] = pd.concat([evaluations[t][0] for t in timescales])
         evaluationPerTarget[i] = pd.concat([evaluations[t][1] for t in timescales])
+        assert "prediction_timescale" in evaluationPerPert[i].columns
+        assert "prediction_timescale" in evaluationPerTarget[i].columns
 
     # Concatenate and add some extra info
     # postprocessEvaluations wants a list of datafrmaes with one dataframe per row in conditions
+    del conditions["prediction_timescale"] # this is now redundant, and if not deleted, it will fuck up a merge in postprocessEvaluations
     evaluationPerPert   = postprocessEvaluations(evaluationPerPert, conditions)
     evaluationPerTarget = postprocessEvaluations(evaluationPerTarget, conditions)
+    assert "prediction_timescale" in evaluationPerPert.columns
+    assert "prediction_timescale" in evaluationPerTarget.columns
     return evaluationPerPert, evaluationPerTarget
 
 def select_comparable_observed_and_predicted(
