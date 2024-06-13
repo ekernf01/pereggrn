@@ -1,3 +1,3 @@
 [console_scripts]
-pereggrn = do_one_experiment
+pereggrn = do_one_experiment:main
 
