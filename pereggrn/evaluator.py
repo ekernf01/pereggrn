@@ -412,8 +412,6 @@ def evaluateCausalModel(
         all_test_data = perturbed_expression_data_heldout_i if is_test_set else perturbed_expression_data_train_i
         
         evaluations = {}
-        if "prediction_timescale" not in perturbed_expression_data_heldout_i.obs.columns:
-            perturbed_expression_data_heldout_i.obs["prediction_timescale"] = conditions.loc[i, "prediction_timescale"]
         if "prediction_timescale" not in predicted_expression[i].obs.columns:
             predicted_expression[i].obs["prediction_timescale"] = conditions.loc[i, "prediction_timescale"]
         timescales = predicted_expression[i].obs["prediction_timescale"].unique()
@@ -423,7 +421,7 @@ def evaluateCausalModel(
                 predicted_expression[i], current_heldout = select_comparable_observed_and_predicted(
                     conditions, 
                     predicted_expression, 
-                    all_test_data[all_test_data.obs["prediction_timescale"] == prediction_timescale, :].copy(), 
+                    all_test_data, 
                     i, 
                 )   
                 # The sensible baseline differs between predicted and test data. 
@@ -468,7 +466,10 @@ def evaluateCausalModel(
 
     # Concatenate and add some extra info
     # postprocessEvaluations wants a list of datafrmaes with one dataframe per row in conditions
-    del conditions["prediction_timescale"] # this is now redundant, and if not deleted, it will fuck up a merge in postprocessEvaluations
+    try: 
+        del conditions["prediction_timescale"] # this is now redundant, and if not deleted, it will fuck up a merge in postprocessEvaluations
+    except KeyError:
+        pass
     evaluationPerPert   = postprocessEvaluations(evaluationPerPert, conditions)
     evaluationPerTarget = postprocessEvaluations(evaluationPerTarget, conditions)
     assert "prediction_timescale" in evaluationPerPert.columns
@@ -518,7 +519,7 @@ def select_comparable_observed_and_predicted(
     test_data.obs["observed_index"] = test_data.obs.index.copy()
     predicted_expression[i].obs["predicted_index"] = predicted_expression[i].obs.index.copy()
     
-    # this merge is *john mulaney voice* "sensitive" about data types
+    # this merge is (john mulaney voice) sensitive about data types
     test_data.obs["perturbation"] = test_data.obs["perturbation"].astype("str")
     predicted_expression[i].obs["perturbation"] = predicted_expression[i].obs["perturbation"].astype("str")
     test_data.obs["cell_type"] = test_data.obs["cell_type"].astype("str")
