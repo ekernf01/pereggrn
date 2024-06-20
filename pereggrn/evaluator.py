@@ -441,6 +441,7 @@ def evaluateCausalModel(
                 baseline_observed  = perturbed_expression_data_train_i[[bool(b) for b in perturbed_expression_data_train_i.obs["is_control"]], :]
                 baseline_predicted = baseline_observed.copy()
 
+            classifier_labels = "cell_type" if (conditions.loc[i, "type_of_split"]=="timeseries") else None # If you pass None, it will look for "louvain" or give up.
             evaluations[prediction_timescale] = evaluateOnePrediction(
                 expression = current_heldout,
                 predictedExpression = predicted_expression_it,

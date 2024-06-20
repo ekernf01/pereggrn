@@ -269,7 +269,6 @@ if args.amount_to_do in {"models", "missing_models", "evaluations"}:
         is_test_set = True,
         conditions = conditions,
         outputs = outputs,
-        classifier_labels = None, # Default is to look for "louvain" or give up
         do_scatterplots = False,
         do_parallel = not args.no_parallel,
     )
