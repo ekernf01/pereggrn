@@ -26,6 +26,8 @@ setup(
         "scipy",
         "altair",
         "sklearn",
+        "yaml",
+        "ggrn",
     ],
     python_requires=">=3.7", 
     url='https://github.com/ekernf01/pereggrn',
