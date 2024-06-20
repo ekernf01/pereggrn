@@ -25,6 +25,7 @@ setup(
         "joblib",
         "scipy",
         "altair",
+		"vl-convert-python",
         "sklearn",
         "yaml",
         "ggrn",
