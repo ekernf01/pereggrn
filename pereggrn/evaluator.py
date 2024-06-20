@@ -435,6 +435,7 @@ def evaluateCausalModel(
                 baseline_predicted = predicted_expression_it[ predicted_expression_it.obs["is_control"], : ].copy()
             else:
                 current_heldout = all_test_data
+                predicted_expression_it = predicted_expression[i]
                 # For train-test splits of a single perturbset, the controls are all in the training data. 
                 # The same baseline can be used for the training and test data, and it needs to be extracted from the training data. 
                 baseline_observed  = perturbed_expression_data_train_i[[bool(b) for b in perturbed_expression_data_train_i.obs["is_control"]], :]
