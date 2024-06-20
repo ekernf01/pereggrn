@@ -9,16 +9,17 @@ Here's what we want.
 - For timeseries, default behavior will be to make predictions for only one `expression_level_after_perturbation` but all combos of `cell_type`, `timepoint`, `perturbation`, `prediction_timescale`. This allows for the necessary complexity of timeseries training data while minimizing computational burden. 
 - The interface between GGRN and benchmarking code will have to change -- it cannot currently carry all this info. 
 - The evaluation code will have to change, since the shape of the output will change and there are limits on how literally we can interpret the output. More detail below. 
+- For methods where `does_simulation_progress` is True (explanation below), one can make non-trivial predictions about control samples. Each backend should attempt to do this whenever `expression_level_after_perturbation` is missing, or whenever `perturbation` is not a gene name in `.var`, or when both those conditions hold. **TODO: audit timeseries backends for behavior on controls, and include controls in the default timeseries data split.**
 
 ### New interfaces for making predictions 
 
 #### Pereggrn call to ggrn
 
-- in GRN.predict(), the `perturbations` arg will be replaced by a new arg called `predictions_metadata`. It will be a pandas dataframe with columns `cell_type`, `timepoint`, `perturbation`, and `expression_level_after_perturbation`. 
+- in GRN.predict(), the `perturbations` arg will be replaced by a new arg called `predictions_metadata`. It will be a pandas dataframe with columns `cell_type`, `timepoint`, `perturbation`, `perturbation_type`, `is_control`, and `expression_level_after_perturbation`. 
     - It will default to `predictions.obs` or `starting_expression.obs` if those are provided.
     - It will be provided to Dockerized methods as a csv. 
-    - The `perturbations` arg will be completely removed.
     - The meaning is "predict expression in `cell_type` at `time_point` if `perturbation` were set to `expression_level_after_perturbation`". However, methods may ignore some columns. For all aim 2 benchmarks, columns `cell_type`, `timepoint` will be placeholders and will be ignored. For GEARS, `expression_level_after_perturbation` is ignored. 
+    - The old `perturbations` arg will be completely removed, breaking backwards compatibility.
 
 #### GGRN call to backends
 
@@ -26,7 +27,7 @@ Here's what we want.
 
 ### Evaluation
 
-#### Metrics to compute
+#### Metrics to compute and interpretation of timescales
 
 In an ideal scenario, each method would make specific and literal predictions of the form, "Starting from cell type $A$ and timepoint $T_1$ in the training data, we alter the dosage of gene $G$ to a value of $E$, and then we run the model forward a number of steps $S$, yielding a predicted expression profile of $X$ at time $T_1+S$." Realistically, this will not happen for a few reasons. 
 
@@ -62,16 +63,18 @@ Taking a step back from this, there are really only two categories. For some met
 
 #### Baseline expression 
 
-When evaluating fold changes, we compute them against some baseline expression. What should this be?
+When evaluating fold changes, we compute them against some baseline expression. What should this be? (Note: I'm not talking about a baseline predictive method. I'm talking about pre-perturbation expression.)
 
 - For train-test splits of a single perturbset, usually the controls are all in the training data. The same baseline can be used for the training and test data, and it needs to be extracted from the training data. 
 - For timeseries-versus-perturbseq splits, the baseline should be different between predicted and test data, because batch effects usually make the timeseries and perturb-seq not directly comparable. For the test data, it should be a **test-set** control sample from the same timepoint and cell type. For the predictions, it should be a **training-set** control sample or a **prediction under no perturbations** from the same timepoint and cell type.
 
 #### Shapes, sizes, and new software interfaces
 
-Since we lack clarity about timescales, the implementation described above may return *trajectories* of predictions. This causes evaluation issues because the shapes of the training data and test data are no longer guaranteed to match. For example, we may run CellOracle and make predictions at 1,2,3, and 10 time-steps, yielding 4 observations per starting state per perturbation. Also, to reduce the total computational burden, above we planned to return just one trajectory per starting state, not one per cell. This means the test data may contain many replicates per perturbation, which is again a problem for evaluation code that previously required a one-to-one match between predicted and observed samples. 
+Since we lack clarity about timescales, the implementation described above may return *trajectories* of predictions. This causes evaluation issues because the shapes of the training data and test data are no longer guaranteed to match. For example, we may run CellOracle and make predictions at 1,2,3, and 10 time-steps, yielding 4 observations per starting state per perturbation. 
 
-The default behavior should be:
+Also, to reduce the total computational burden, above we planned to return just one trajectory per starting state, not one per cell. This means the test data may contain many replicates per perturbation, which is again a problem for evaluation code that previously required a one-to-one match between predicted and observed samples. 
+
+The new default behavior should be:
 
 - For multiple predictions made after different numbers of time-steps, evaluate these separately, even if they are returned inside the same AnnData object. This will require new code inside of `evaluator.evaluateCausalModel` to iterate over values of `predictions.obs["prediction_timescale"]`.
 - Compare predictions to test data within each cell type and timepoint, averaging together all test samples. This will require new code inside of `evaluator.evaluateCausalModel` to do the averaging.

@@ -82,7 +82,7 @@ def get_default_metadata():
         "low_dimensional_training": "svd",
         "low_dimensional_value": None,
         "matching_method": "steady_state",
-        "prediction_timescale": [1],
+        "prediction_timescale": "1",
         "expand_prediction_timescale": False,
         "does_simulation_progress": None,
     }
@@ -195,12 +195,6 @@ def lay_out_runs(
     except AttributeError:
         pass
     del metadata["baseline_condition"]
-
-    # If we want to predict not one expression state but a trajectory over time,
-    # sometimes it is convenient for these to be expanded, and other times not.
-    if not metadata["expand_prediction_timescale"]:
-        del metadata["prediction_timescale"]
-    del metadata["expand_prediction_timescale"]
     
     # kwargs is a dict containing arbitrary kwargs for backend code (e.g. batch size for DCD-FG). 
     # We expand these if the user says so.
@@ -228,7 +222,7 @@ def lay_out_runs(
         del metadata["expand"]
         all_lengths = {k:len(v) for k,v in metadata.items()}
         num_conditions = int(np.max(list(all_lengths.values())))
-        assert all( [l in (1, num_conditions) for l in all_lengths.values()] ), f"When 'expand' is 'ladder', length must be 1 or the max for all metadata entries. All lengths: {all_lengths}"
+        assert all( [l in (1, num_conditions) for l in all_lengths.values()] ), f"When 'expand' is 'ladder', length must be 1 or the max for all metadata entries. \n\nAll lengths: {all_lengths}"
         metadata = {k:(v*num_conditions if all_lengths[k]==1 else v) 
                     for k,v in metadata.items()}
         conditions =  pd.DataFrame(metadata)
@@ -315,7 +309,7 @@ def do_one_run(
         low_dimensional_training             = conditions.loc[i,"low_dimensional_training"],
         low_dimensional_value                = conditions.loc[i,"low_dimensional_value"],
                                              # We can provide either one time point per condition, or a list to predict a whole trajectory at once. 
-        prediction_timescale                 = conditions.loc[i,"prediction_timescale"] if metadata["expand_prediction_timescale"] else metadata["prediction_timescale"],
+        prediction_timescale                 = conditions.loc[i,"prediction_timescale"],
         do_parallel = do_parallel,
         kwargs                               = {
                                                 k:simplify_type(conditions.loc[i,:])[k] if k in metadata["kwargs_to_expand"] else metadata["kwargs"][k] 
@@ -715,6 +709,10 @@ def averageWithinPerturbation(ad: anndata.AnnData, confounders = []):
         new_ad.raw.X[obs_row["temp_int_index"],:] = ad[p_idx,:].raw.X.sum(0)
 
     new_ad.uns = ad.uns.copy()
+    assert "is_control" in new_ad.obs.columns
+    assert "perturbation" in new_ad.obs.columns
+    assert "perturbation_type" in new_ad.obs.columns
+    assert "expression_level_after_perturbation" in new_ad.obs.columns
     return new_ad
 
 def train_classifier(adata: anndata.AnnData, target_key: str = None):

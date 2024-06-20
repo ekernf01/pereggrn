@@ -64,7 +64,7 @@ except Exception as e:
 # Default args to this script for interactive use
 if args.experiment_name is None:
     args = Namespace(**{
-        "experiment_name": "1.2.2_11",
+        "experiment_name": "1.8.1_0",
         "amount_to_do": "missing_models",
         "save_trainset_predictions": False,
         "output": "experiments",
@@ -151,7 +151,7 @@ for i in conditions.index:
                     peak_ram = [p for p in peak_ram if ("B" in p)][0]
                     peak_ram = peak_ram.split("│")[2].strip()
                 except:
-                    print(f"Memory profiling results are not as expected, but you can find the raw memray output in {train_mem_file} and try to parse it yourself.")
+                    print(f"Memory profiling results are not as expected, but you can find the raw memray output in {train_mem_file} and try to parse it yourself, then save it to {train_time_file}.")
                     peak_ram = np.NAN
                 pd.DataFrame({"walltime (seconds)":train_time, "peak RAM": peak_ram}, index = [i]).to_csv(train_time_file)
             except Exception as e: 
@@ -179,15 +179,15 @@ for i in conditions.index:
             # Predictions metadata will be in a dataframe or in the .obs of an AnnData; see docs for grn.predict().
             predictions       = None
             predictions_train = None
+            all_except_elap = ['timepoint', 'cell_type', 'perturbation', 'is_control', 'perturbation_type']
             if conditions.loc[i, "type_of_split"] == "timeseries":
-                tcp = ['timepoint', 'cell_type', 'perturbation']
-                predictions_metadata       = perturbed_expression_data_heldout_i.obs[tcp + ["expression_level_after_perturbation"]].groupby(tcp).agg({"expression_level_after_perturbation": experimenter.stringy_mean}).reset_index()
-                predictions_train_metadata = perturbed_expression_data_train_i.obs[  tcp + ["expression_level_after_perturbation"]].groupby(tcp).agg({"expression_level_after_perturbation": experimenter.stringy_mean}).reset_index()
+                predictions_metadata       = perturbed_expression_data_heldout_i.obs[all_except_elap + ["expression_level_after_perturbation"]].groupby(all_except_elap).agg({"expression_level_after_perturbation": experimenter.stringy_mean}).reset_index()
+                predictions_train_metadata = perturbed_expression_data_train_i.obs[  all_except_elap + ["expression_level_after_perturbation"]].groupby(all_except_elap).agg({"expression_level_after_perturbation": experimenter.stringy_mean}).reset_index()
                 assert conditions.loc[i, "starting_expression"] == "control", "cannot currently reveal test data when doing time-series benchmarks"
             else:
                 if conditions.loc[i, "starting_expression"] == "control":
-                    predictions_metadata       = perturbed_expression_data_heldout_i.obs[['timepoint', 'cell_type', 'perturbation', "expression_level_after_perturbation"]]
-                    predictions_train_metadata = perturbed_expression_data_train_i.obs[['timepoint', 'cell_type', 'perturbation', "expression_level_after_perturbation"]]
+                    predictions_metadata       = perturbed_expression_data_heldout_i.obs[all_except_elap+["expression_level_after_perturbation"]]
+                    predictions_train_metadata = perturbed_expression_data_train_i.obs[  all_except_elap+["expression_level_after_perturbation"]]
                 elif conditions.loc[i, "starting_expression"] == "heldout":
                     print("Setting up initial conditions.")
                     predictions       = perturbed_expression_data_heldout_i.copy()
@@ -196,24 +196,25 @@ for i in conditions.index:
                     predictions_train_metadata = None
                 else:
                     raise ValueError(f"Unexpected value of 'starting_expression' in metadata: { conditions.loc[i, 'starting_expression'] }")
-            print("Running GRN.predict()...")
-            prediction_timescale = conditions.loc[i,"prediction_timescale"] if metadata["expand_prediction_timescale"] else metadata["prediction_timescale"]
-            predictions   = grn.predict(
-                predictions = predictions,
-                predictions_metadata = predictions_metadata,
-                control_subtype = conditions.loc[i, "control_subtype"], 
-                feature_extraction_requires_raw_data = grn.feature_extraction.startswith("geneformer"),
-                prediction_timescale = prediction_timescale, 
-                do_parallel = not args.no_parallel,
-            )
-            # Output shape should match the heldout data, or some aggregation of it.
+            try:
+                print("Running GRN.predict()...")
+                predictions   = grn.predict(
+                    predictions = predictions,
+                    predictions_metadata = predictions_metadata,
+                    control_subtype = conditions.loc[i, "control_subtype"], 
+                    feature_extraction_requires_raw_data = grn.feature_extraction.startswith("geneformer"),
+                    prediction_timescale = [int(i) for i in conditions.loc[i,"prediction_timescale"].split(",")], 
+                    do_parallel = not args.no_parallel,
+                )
+            except Exception as e: 
+                if args.skip_bad_runs:
+                    print(f"Caught exception {repr(e)} on experiment {i}; skipping.")
+                else:
+                    raise e
+                continue
+            # Output shape should usually match the heldout data in shape.
             if conditions.loc[i, "type_of_split"] != "timeseries":
                 assert predictions.shape == perturbed_expression_data_heldout_i.shape, f"There should be one prediction for each observation in the test data. Got {predictions.shape[0]}, expected {perturbed_expression_data_heldout_i.shape[0]}."
-            else:
-                tcp = ['timepoint', 'cell_type', 'perturbation']
-                expected_num_cells = perturbed_expression_data_heldout_i.obs[tcp + ["expression_level_after_perturbation"]].groupby(tcp).agg({"expression_level_after_perturbation": experimenter.stringy_mean}).reset_index().shape[0]
-                expected_num_cells = expected_num_cells * len(prediction_timescale)
-                assert predictions.shape[0] == expected_num_cells, f"There should be one prediction per cell type, timepoint, and perturbation. Got {predictions.shape[0]}, expected {expected_num_cells}."
 
             # Sometimes AnnData has trouble saving pandas bool columns and sets, and they aren't needed here anyway.
             try:
@@ -232,7 +233,7 @@ for i in conditions.index:
                     predictions_metadata = predictions_train_metadata,
                     predictions = predictions_train, 
                     feature_extraction_requires_raw_data = grn.feature_extraction.startswith("geneformer"),
-                    prediction_timescale = conditions.loc[i,"prediction_timescale"] if metadata["expand_prediction_timescale"] else metadata["prediction_timescale"], 
+                    prediction_timescale = [int(t) for t in conditions.loc[i,"prediction_timescale"].split(",")],
                     do_parallel = not args.no_parallel,
                 )
                 fitted_values.obs.index = perturbed_expression_data_train_i.obs.index.copy()
@@ -251,9 +252,9 @@ if args.amount_to_do in {"models", "missing_models", "evaluations"}:
     except FileNotFoundError:
         fitted_values = None
     # Check sizes before running all evaluations because it helps catch errors sooner.
-    if conditions.loc[i, "type_of_split"] != "timeseries":
-        print("Checking sizes: ", flush = True)
-        for i in conditions.index:
+    print("Checking sizes: ", flush = True)
+    for i in conditions.index:
+        if conditions.loc[i, "type_of_split"] != "timeseries":
             print(f"- {i}", flush=True)
             perturbed_expression_data_train_i, perturbed_expression_data_heldout_i = get_current_data_split(i)
             evaluator.assert_perturbation_metadata_match(predictions[i], perturbed_expression_data_heldout_i)       
