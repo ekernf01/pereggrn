@@ -426,6 +426,8 @@ def evaluateCausalModel(
                     predicted_expression[i], 
                     all_test_data, 
                     i,
+                    # I don't care if this is somewhat redundant with the classifier used below. We need both even if not elegant.
+                    classifier = experimenter.train_classifier(perturbed_expression_data_train_i, target_key = "cell_type")
                 )   
                 # The sensible baseline differs between predicted and test data. 
                 # For the test data, it should be a **test-set** control sample from the same timepoint and cell type. 
@@ -472,7 +474,7 @@ def evaluateCausalModel(
     # Concatenate and add some extra info
     # postprocessEvaluations wants a list of datafrmaes with one dataframe per row in conditions
     try: 
-        del conditions["prediction_timescale"] # this is now redundant, and if not deleted, it will fuck up a merge in postprocessEvaluations
+        del conditions["prediction_timescale"] # this is now redundant, and if not deleted, it will mess up a merge in postprocessEvaluations
     except KeyError:
         pass
     evaluationPerPert   = postprocessEvaluations(evaluationPerPert, conditions)
@@ -486,6 +488,7 @@ def select_comparable_observed_and_predicted(
     predictions: anndata.AnnData, 
     perturbed_expression_data_heldout_i: anndata.AnnData, 
     i: int, 
+    classifier,
 ) -> Tuple[anndata.AnnData, anndata.AnnData]:
     """Select a set of predictions that are comparable to the test data, and aggregate the test data within each combination of
     perturbed gene, timepoint, and cell_type. See docs/timeseries_prediction.md for details.
@@ -496,22 +499,13 @@ def select_comparable_observed_and_predicted(
         predictions (anndata.AnnData): predicted expression
         perturbed_expression_data_heldout_i (anndata.AnnData): the heldout data
         i (int): which condition you are currently preparing to evaluate
-        prediction_timescale: We select only predictions matching this value. This will help us separately evaluate e.g. CellOracle with 1 versus 3 iterations.
+        classifier: for methods like PRESCIENT where the simulation can last a long time, we may need to update the "cell_type" labels. 
+            This should be an sklearn classifier with a .predict() method. It should accept all genes as features.
 
     Returns:
         Tuple[anndata.AnnData, anndata.AnnData]: the observed test data and the predictions, with a one-to-one match between them.
     """
-    # Set a default about handling of time
-    if pd.isnull(conditions.loc[i, "does_simulation_progress"]):
-        backends_that_give_a_fuck_about_the_concept_of_time = [
-            "ggrn_docker_backend_prescient",
-            "ggrn_docker_backend_timeseries_baseline",
-            "autoregressive"
-        ]
-        # This regex removes the prefix docker____ekernf01/
-        backend_short_name = re.sub(conditions.loc[i, "regression_method"], ".*/", "")
-        conditions.loc[i, "does_simulation_progress"] = backend_short_name in backends_that_give_a_fuck_about_the_concept_of_time
-    # maintain backwards compatibility
+    # maintain backwards compatibility, this allows these fields to be missing.
     if not "timepoint" in perturbed_expression_data_heldout_i.obs.columns: 
         perturbed_expression_data_heldout_i.obs["timepoint"] = 0
     if not "cell_type" in perturbed_expression_data_heldout_i.obs.columns: 
@@ -522,6 +516,7 @@ def select_comparable_observed_and_predicted(
     predictions.obs["takedown_timepoint"] = predictions.obs["timepoint"]
     if conditions.loc[i, "does_simulation_progress"]:
         predictions.obs.loc[:, "takedown_timepoint"] += predictions.obs.loc[:, "prediction_timescale"]
+        predictions.obs.loc[:, "cell_type"] = classifier.predict(predictions.X)
 
     test_data.obs["observed_index"] = test_data.obs.index.copy()
     predictions.obs["predicted_index"] = predictions.obs.index.copy()

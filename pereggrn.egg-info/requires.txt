@@ -2,3 +2,13 @@ pandas
 numpy
 anndata
 scanpy
+memray
+pereggrn_perturbations
+pereggrn_networks
+joblib
+scipy
+altair
+vl-convert-python
+scikit-learn
+pyyaml
+ggrn

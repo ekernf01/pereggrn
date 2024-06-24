@@ -14,6 +14,7 @@ import pereggrn_networks
 import pereggrn_perturbations
 from collections import OrderedDict
 from sklearn.ensemble import RandomForestClassifier
+import re 
 
 def get_required_keys():
     """Get all metadata keys that are required from the user.
@@ -82,7 +83,6 @@ def get_default_metadata():
         "low_dimensional_value": None,
         "matching_method": "steady_state",
         "prediction_timescale": "1",
-        "expand_prediction_timescale": False,
         "does_simulation_progress": None,
     }
 
@@ -165,7 +165,7 @@ def lay_out_runs(
   networks: dict, 
   metadata: dict,
 ) -> pd.DataFrame:
-    """Lay out the specific training runs or conditions included in this experiment.
+    """Lay out the specific training runs or conditions included in this experiment, and do some idiosyncratic metadata wrangling.
 
     Args:
     networks (dict): dict with string keys and LightNetwork values
@@ -209,7 +209,7 @@ def lay_out_runs(
         if type(metadata[k]) != list:
             metadata[k] = [metadata[k]]
 
-    # ==== Done preparing for expansion ====
+    # ==== Done preparing for expansion. Expand now. ====
     if metadata["expand"][0]=="grid":
         del metadata["expand"]
         # Make all combos 
@@ -233,6 +233,20 @@ def lay_out_runs(
     for i in conditions.index:
         conditions.loc[i, "network_prior"] = \
         "ignore" if conditions.loc[i, "network_datasets"] == "dense" else conditions.loc[i, "network_prior"]
+
+    # Set a default about handling of time
+    # This used to be in evaluator.select_comparable_observed_and_predicted() but it helps to have it done up front.
+    backends_that_give_a_fuck_about_the_concept_of_time = [
+        "ggrn_docker_backend_prescient",
+        "ggrn_docker_backend_timeseries_baseline",
+        "autoregressive"
+    ]
+    for i in conditions.index:
+        if pd.isnull(conditions.loc[i, "does_simulation_progress"]):
+            # This regex removes the prefix docker____ekernf01/ so we can match more easily
+            backend_short_name = re.sub(conditions.loc[i, "regression_method"], ".*/", "")
+            conditions.loc[i, "does_simulation_progress"] = backend_short_name in backends_that_give_a_fuck_about_the_concept_of_time
+
 
     conditions.index.name = "condition"
     conditions["baseline_condition"] = baseline_condition
@@ -307,7 +321,6 @@ def do_one_run(
         low_dimensional_structure            = conditions.loc[i,"low_dimensional_structure"],
         low_dimensional_training             = conditions.loc[i,"low_dimensional_training"],
         low_dimensional_value                = conditions.loc[i,"low_dimensional_value"],
-                                             # We can provide either one time point per condition, or a list to predict a whole trajectory at once. 
         prediction_timescale                 = conditions.loc[i,"prediction_timescale"],
         do_parallel = do_parallel,
         kwargs                               = {

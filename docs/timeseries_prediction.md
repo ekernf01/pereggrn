@@ -47,11 +47,11 @@ Based on past work, here are some signals that we might still have success predi
 
 Here are some best guesses about which predicted timepoints to compare against which test timepoints.
 
-- Endoderm (perturbations observed at day 5): 
-    - CellOracle: compare d5 observed against predictions starting at d5 and doing 3 iterations
-    - PRESCIENT:  compare d5 observed against predictions starting at d0 and doing 5 iterations, or dn and doing 5-n iterations
-    - Dictys:     compare d5 observed against predictions starting at d5 and adding the total-effect logFC
-    - scKINETICS: compare d5 observed against predictions starting at d5 and doing one iteration
+- Endoderm (perturbations observed at day 4): 
+    - CellOracle: compare d4 observed against predictions starting at d4 and doing 3 iterations
+    - PRESCIENT:  compare d4 observed against predictions starting at d0 and doing 4 iterations, or dn and doing 4-n iterations
+    - Dictys:     compare d4 observed against predictions starting at d4 and adding the total-effect logFC
+    - scKINETICS: compare d4 observed against predictions starting at d4 and doing one iteration
 - FANTOM4, A549: we cannot run these methods on bulk data
 - Hematopoiesis & zebrafish: 
     - CellOracle: compare each cell type/timepoint observed against same cell type predictions, doing 3 iterations
@@ -59,7 +59,16 @@ Here are some best guesses about which predicted timepoints to compare against w
     - Dictys:     compare each cell type/timepoint observed against same cell type predictions, adding the total-effect logFC
     - scKINETICS: compare each cell type/timepoint observed against same cell type predictions doing one iteration
 
-Taking a step back from this, there are really only two categories. For some methods, the simulation is moving forward in time. For most, the simulation is really just describing perturbation effects with minimal to no progress in time. In `evaluateCausalModel`, when a subset of predictions is selected for evaluation, we will add a boolean parameter `does_simulation_progress`. If `True`, the evaluation will be PRESCIENT-style, so that `prediction_timescale + timepoint` in the prediction metadata is equal to `timepoint` in the observed expression data. If `False`, the evaluation will be CO-style, so that `timepoint` in the prediction metadata is equal to `timepoint` in the observed expression data. We will expose this to the user through `metadata.json`. `does_simulation_progress` will default to `True`, unless the backend is prescient, autoregressive, or timeseries baseline, in which case it will default to `False`.
+Taking a step back from this, there are really only two categories. For some methods, the simulation is moving forward in time. For most, the simulation is really just describing cell-state-specific perturbation effects with minimal to no progress in time. To represent this, we will add a boolean parameter `does_simulation_progress`. If `True`, the evaluation will be PRESCIENT-style, so that `prediction_timescale + timepoint` in the prediction metadata is equal to `timepoint` in the observed expression data. If `False`, the evaluation will be CO-style, so that `timepoint` in the prediction metadata is equal to `timepoint` in the observed expression data. We will expose `does_simulation_progress` to the user through `metadata.json`. `does_simulation_progress` will default to `False`, unless the backend is prescient, autoregressive, or timeseries baseline, in which case it will default to `True`. This also affects the timepoints that the benchmarking software requests. In all cases, any variable called `timepoint` will mean the time at which the simulation **starts**.
+
+Long-term simulation creates problems for cell type labels too. In complex timeseries such as the Saunders whole zebrafish embryo scRNA, it is hard to name the precursor that will give rise to a specified terminal cell type 48 or 72 hours later. In other words, there is a hard lineage tracing problem embedded inside the causal GRN benchmarking problem. GGRN and PRESCIENT offer various solutions (see discussion of `matching_method` in the [GGRN exposition](https://github.com/ekernf01/ggrn/blob/main/docs/GGRN.md)), but these are approximations for purposes of training specific models. For ground truth, we need an approach that is neutral and data-driven. So the current plan is to make predictions from every available starting state, then before evaluation, reassign cell type labels using a classifier.
+
+One more thing requires some clarification: what exactly is a "cell type" for purposes of method evaluation? 
+
+- A549 and FANTOM4: let's not try to classify these into cell types -- all train data, test data, and predictions should be labeled as just a single cell type. 
+- Hematopoiesis: We can use "cell_type" in a similar way to the CellOracle demos on these data -- by contrast to the cell line data, there is a lot of diversity and differentiation here.
+- Zebrafish: We can just use the original authors' cell type annotation. 
+- Endoderm: this is a tricky case because the knockdowns yield one cell type that doesn't occur in the timeseries data and two others that don't match exactly. See [fig. 2c](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6525305/). Currently the data have "cell_type" set to "endoderm_differentiation", but I think I should rename it to "PSC", "primitive streak", "endoderm", or "unknown" in both the training and test data.
 
 #### Baseline expression 
 

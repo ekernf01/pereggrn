@@ -180,10 +180,25 @@ for i in conditions.index:
             predictions       = None
             predictions_train = None
             all_except_elap = ['timepoint', 'cell_type', 'perturbation', 'is_control', 'perturbation_type']
+            print("0 EWQRKUEVOBREAOUVOIHVOIEAHGOIRHEGOIHIOGHEOIVHAOIH")
             if conditions.loc[i, "type_of_split"] == "timeseries":
                 predictions_metadata       = perturbed_expression_data_heldout_i.obs[all_except_elap + ["expression_level_after_perturbation"]].groupby(all_except_elap).agg({"expression_level_after_perturbation": experimenter.stringy_mean}).reset_index()
                 predictions_train_metadata = perturbed_expression_data_train_i.obs[  all_except_elap + ["expression_level_after_perturbation"]].groupby(all_except_elap).agg({"expression_level_after_perturbation": experimenter.stringy_mean}).reset_index()
                 assert conditions.loc[i, "starting_expression"] == "control", "cannot currently reveal test data when doing time-series benchmarks"
+                # "timepoint" in the prediction metadata is the timepoint at which we START the simulation.
+                # We need to arrange it so the simulation also ENDS at a timepoint we can evaluate.
+                # In cases where the simulation is long-term, that's a hard problem. 
+                # Instead of solving lineage tracing on the fly (lolol), we just start from all available cell types.
+                print("1 EWQRKUEVOBREAOUVOIHVOIEAHGOIRHEGOIHIOGHEOIVHAOIH")
+                if conditions.loc[i, "does_simulation_progress"]:
+                    def get_unique_rows(df, factors): 
+                        return df[factors].groupby(factors).mean().reset_index()
+                    predictions_metadata = pd.merge(
+                        get_unique_rows(predictions_train_metadata, ['timepoint', 'cell_type']), 
+                        get_unique_rows(predictions_metadata, ['perturbation', 'is_control', 'perturbation_type']),
+                        how = "cross", 
+                    )
+                    print("2 EWQRKUEVOBREAOUVOIHVOIEAHGOIRHEGOIHIOGHEOIVHAOIH")
             else:
                 if conditions.loc[i, "starting_expression"] == "control":
                     predictions_metadata       = perturbed_expression_data_heldout_i.obs[all_except_elap+["expression_level_after_perturbation"]]
