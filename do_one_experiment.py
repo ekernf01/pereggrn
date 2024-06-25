@@ -182,8 +182,8 @@ for i in conditions.index:
             predictions_train = None
             all_except_elap = ['timepoint', 'cell_type', 'perturbation', 'is_control', 'perturbation_type']
             if conditions.loc[i, "type_of_split"] == "timeseries":
-                predictions_metadata       = perturbed_expression_data_heldout_i.obs[all_except_elap + ["expression_level_after_perturbation"]].groupby(all_except_elap).agg({"expression_level_after_perturbation": experimenter.stringy_mean}).reset_index()
-                predictions_train_metadata = perturbed_expression_data_train_i.obs[  all_except_elap + ["expression_level_after_perturbation"]].groupby(all_except_elap).agg({"expression_level_after_perturbation": experimenter.stringy_mean}).reset_index()
+                predictions_metadata       = perturbed_expression_data_heldout_i.obs[all_except_elap + ["expression_level_after_perturbation"]].groupby(all_except_elap, observed = True).agg({"expression_level_after_perturbation": experimenter.stringy_mean}).reset_index()
+                predictions_train_metadata = perturbed_expression_data_train_i.obs[  all_except_elap + ["expression_level_after_perturbation"]].groupby(all_except_elap, observed = True).agg({"expression_level_after_perturbation": experimenter.stringy_mean}).reset_index()
                 assert conditions.loc[i, "starting_expression"] == "control", "cannot currently reveal test data when doing time-series benchmarks"
                 # "timepoint" in the prediction metadata is the timepoint at which we START the simulation.
                 # We need to arrange it so the simulation also ENDS at a timepoint we can evaluate.
