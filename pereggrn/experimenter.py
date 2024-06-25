@@ -242,9 +242,9 @@ def lay_out_runs(
         "autoregressive"
     ]
     for i in conditions.index:
-        if pd.isnull(conditions.loc[i, "does_simulation_progress"]):
+        if conditions.loc[i, "does_simulation_progress"] is None or pd.isnull(conditions.loc[i, "does_simulation_progress"]):
             # This regex removes the prefix docker____ekernf01/ so we can match more easily
-            backend_short_name = re.sub(conditions.loc[i, "regression_method"], ".*/", "")
+            backend_short_name = re.sub(".*\/", "", conditions.loc[i, "regression_method"])
             conditions.loc[i, "does_simulation_progress"] = backend_short_name in backends_that_give_a_fuck_about_the_concept_of_time
 
 
