@@ -195,6 +195,18 @@ for i in conditions.index:
                         predictions_metadata[['perturbation', 'is_control', 'perturbation_type', "expression_level_after_perturbation"]],
                         how = "cross", 
                     )
+                # If there are cell types only present in the test set, try reaching them from any training set cell type. 
+                train_set_cell_types = set(predictions_train_metadata["cell_type"])
+                test_set_cell_types = set(predictions_metadata["cell_type"]) 
+                test_only_cell_types = test_set_cell_types - train_set_cell_types
+                if len(test_only_cell_types) > 0:
+                    print("Cell types in test set but not in training set:", test_only_cell_types)
+                    x = predictions_metadata.query("cell_type in @test_only_cell_types").copy()
+                    predictions_metadata = predictions_metadata.query("cell_type in @train_set_cell_types")
+                    for ct in train_set_cell_types:
+                        x["cell_type"] = ct
+                        predictions_metadata = pd.concat([predictions_metadata, x])
+                
             else:
                 if conditions.loc[i, "starting_expression"] == "control":
                     predictions_metadata       = perturbed_expression_data_heldout_i.obs[all_except_elap+["expression_level_after_perturbation"]]
@@ -281,7 +293,8 @@ if args.amount_to_do in {"models", "missing_models", "evaluations"}:
         conditions = conditions,
         outputs = outputs,
         do_scatterplots = False,
-        do_parallel = not args.no_parallel,
+        do_parallel = not args.no_parallel, 
+
     )
     evaluationPerPert.to_parquet(   os.path.join(outputs, "evaluationPerPert.parquet"))
     evaluationPerTarget.to_parquet( os.path.join(outputs, "evaluationPerTarget.parquet"))
