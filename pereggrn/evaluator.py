@@ -412,7 +412,7 @@ def evaluateCausalModel(
             predicted_expression[i].obs["prediction_timescale"] = conditions.loc[i, "prediction_timescale"]
         timescales = predicted_expression[i].obs["prediction_timescale"].unique()
         predicted_expression[i] = predicted_expression[i].to_memory(copy = True)
-        predicted_expression[i] = predicted_expression[i][pd.notnull(predicted_expression[i].X.sum(0)), :]
+        predicted_expression[i] = predicted_expression[i][pd.notnull(predicted_expression[i].X.sum(1)), :]
         for prediction_timescale in timescales:
             if (conditions.loc[i, "type_of_split"] == "timeseries"):
                 # For timeseries-versus-perturbseq splits, baseline and observed-to-predicted matching are more complicated. See `docs/timeseries_prediction.md` for details.
