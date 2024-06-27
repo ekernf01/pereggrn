@@ -380,7 +380,6 @@ def evaluateCausalModel(
     do_scatterplots = True, 
     path_to_accessory_data: str = "../accessory_data",
     do_parallel: bool = True,
-    type_of_split: str = "interventional",
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """Compile plots and tables comparing heldout data and predictions for same. 
 
@@ -395,10 +394,6 @@ def evaluateCausalModel(
         do_scatterplots (bool): Make scatterplots of observed vs predicted expression.
         path_to_accessory_data (str): We use this to add gene metadata on LoF intolerance.
         do_parallel (bool): Use joblib to parallelize the evaluation across perturbations. Recommended unless you are debugging (it ruins tracebacks).
-        type_of_split: "timeseries", "interventional", or another option from experimenter.splitDataWrapper(). For most values of this parameter,
-            the evaluation will assume you have provided one prediction per test sample. For "timeseries", the evaluation will assume you have provided
-            one prediction per combination of cell_type, timepoint, prediction_timescale, and perturbation. In general the held-out data will have more 
-            replication than that, and will have no prediction_timescale labels; just timepoint labels. 
     """
     evaluationPerPert = {}
     evaluationPerTarget = {}
@@ -417,6 +412,7 @@ def evaluateCausalModel(
             predicted_expression[i].obs["prediction_timescale"] = conditions.loc[i, "prediction_timescale"]
         timescales = predicted_expression[i].obs["prediction_timescale"].unique()
         predicted_expression[i] = predicted_expression[i].to_memory(copy = True)
+        predicted_expression[i] = predicted_expression[i][pd.notnull(predicted_expression[i].X.sum(0)), :]
         for prediction_timescale in timescales:
             if (conditions.loc[i, "type_of_split"] == "timeseries"):
                 # For timeseries-versus-perturbseq splits, baseline and observed-to-predicted matching are more complicated. See `docs/timeseries_prediction.md` for details.
