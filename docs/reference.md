@@ -1,4 +1,6 @@
-## Reference documentation for benchmarking infrastructure
+## Reference documentation for PEREGGRN benchmarking infrastructure
+
+PEREGGRN: PErturbation Response Evaluation via a Grammar of Gene Regulatory Networks
 
 ![Editable source for this diagram is in slides for Nov 7 2023 Battle Lab long talk](call_diagram.png)
 
@@ -18,11 +20,11 @@ conda activate ggrn
 pereggrn --experiment_name 1.0_0 --amount_to_do missing_models --save_trainset_predictions \
     > experiments/1.0_0/stdout.txt 2> experiments/1.0_0/err.txt
 ```
-To see the reference manual describing the flags used in that call, run `pereggrn -h`.
+To see the reference manual describing the flags used in that call and all others, run `pereggrn -h`.
 
 ### Metadata specifying an experiment
 
-Experiment metadata files are JSON dictionaries with a limited set of keys, some optional. Most values can be either a single value, or a list. If a list is provided, usually the experiment is run once for each item in the list (see `expand` below). Here are the most important fields.
+Experiment metadata files are JSON dictionaries with a limited set of keys, many optional. Most values can be either a single value, or a list. If a list is provided, usually the experiment is run once for each item in the list (see `expand` below). Here are the most important fields.
 
 - `perturbation_dataset` describes a dataset using the same names as our perturbation dataset collection. Only one dataset is allowed per Experiment. 
 - `readme` describes the purpose of the experiment. 
@@ -70,13 +72,13 @@ Experiment metadata files are JSON dictionaries with a limited set of keys, some
             }
 - For discussion of `does_simulation_progress`, see `docs/timeseries_prediction.md`. 
 - You can add standard all GGRN args to the metadata; they are documented in the [ggrn repo](https://github.com/ekernf01/ggrn). The `prediction_timescale` arg should be given as a comma-separated string that can be parsed as ints, e.g. "1,3,5". 
-- There are some components not yet documented. If this becomes an obstacle to you, file a github issue and we'll try to help out. 
-- If you need to study or alter the code, most code implementing these behaviors is in the `experimenter` module of the [pereggrn package](https://github.com/ekernf01/pereggrn). Use `pereggrn.experimenter.get_default_metadata()` to see the default values of each metadata field. Use `pereggrn.experimenter.get_required_keys()` to see which keys are required. Use `pereggrn.experimenter.get_optional_keys()` to see optional keys. 
+- `visualization_embedding` refers to a field in the training data's `obsm` that is used to plot train, test, and predictions all on the same coordinate system. To obtain these plots, make sure the provided value is present in the `.obsm` attribute of the training data.
+- There are some metadata fields not yet documented. If this becomes an obstacle to you, file a github issue and we'll try to help out. Most code implementing these behaviors is in the `experimenter` module of the [pereggrn package](https://github.com/ekernf01/pereggrn). Use `pereggrn.experimenter.get_default_metadata()` to see the default values of each metadata field. Use `pereggrn.experimenter.get_required_keys()` to see which keys are required. Use `pereggrn.experimenter.get_optional_keys()` to see optional keys.
 
 
 ### Outputs
 
-Here is an annotated layout of files and folders produced for each Experiment.
+Here is an annotated layout of output files and folders produced for each Experiment.
 
 ```bash
 ├── conditions.csv # All combinations of values provided in the metadata.  
@@ -110,7 +112,7 @@ Here is an annotated layout of files and folders produced for each Experiment.
 The predictions in `predictions/*.h5ad` change in size depending on `type_of_split`. 
 
 - For most data splits, the predictions are the same size as the test data. This often includes the same gene perturbed multiple times, if the same gene is perturbed multiple times in the test data. 
-- For the "timeseries" data split, predictions will contain separate samples for each combination of perturbation, cell type, starting timepoint, and prediction timescale (number of iterations). Because this is already large, we may avoid including the same gene perturbed multiple times, even if the same gene is perturbed multiple times in the test data. As of 2024 March 15, we are still working through this. 
+- For the "timeseries" data split, predictions will contain separate samples for each combination of perturbation, cell type, starting timepoint, and prediction timescale (number of iterations). Because this is already large, we avoid including the same gene perturbed multiple times, even if the same gene is perturbed multiple times in the test data. See `docs/timeseries_prediction.md` in this repo for more explanation of the idiosyncracies of training on a timeseries dataset and testing on a perturb-seq dataset. 
 
 Here is a description of the columns of `evaluationPerPert.parquet` and `evaluationPerTarget.parquet`.
 

@@ -84,6 +84,7 @@ def get_default_metadata():
         "matching_method": "steady_state",
         "prediction_timescale": "1",
         "does_simulation_progress": None,
+        "visualization_embedding": "X_pca",
     }
 
 def validate_metadata(
@@ -235,7 +236,6 @@ def lay_out_runs(
         "ignore" if conditions.loc[i, "network_datasets"] == "dense" else conditions.loc[i, "network_prior"]
 
     # Set a default about handling of time
-    # This used to be in evaluator.select_comparable_observed_and_predicted() but it helps to have it done up front.
     backends_that_give_a_fuck_about_the_concept_of_time = [
         "ggrn_docker_backend_prescient",
         "ggrn_docker_backend_timeseries_baseline",
@@ -672,6 +672,19 @@ def _splitDataHelper(adata: anndata.AnnData,
             )
         )
     return adata_train, adata_heldout
+
+def find_controls(adata: anndata.AnnData):
+    """Reconstruct the is_control column from the "perturbation" and "expression_level_after_perturbation" in .obs.
+
+    Args:
+        obs (pd.DataFrame): _description_
+    """
+    adata.obs["is_control"] = True
+    for i in adata.obs.index:
+        for p, e in zip( adata.obs.loc[i,"perturbation"].split(","), str(adata.obs.loc[i,"expression_level_after_perturbation"]).split(",") ):
+            if p in adata.var_names and pd.notnull(e):
+                adata.obs.loc[i, "is_control"] = False
+    return adata
 
 def stringy_mean(x):
         """Take a mean but handle comma separated strings, e.g. mean of ["1,3", "2,4"] returns ["1.5,3.5"]."""

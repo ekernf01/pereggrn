@@ -71,7 +71,7 @@ if args.experiment_name is None:
         "input": "experiments",
         "save_models": False,
         "skip_bad_runs": False, # Makes debug/traceback easier
-        "no_parallel": True, # Makes debug/traceback easier
+        "no_parallel": False, # Makes debug/traceback easier
     })
 # Additional bookkeeping
 print("Running experiment", flush = True)
@@ -188,13 +188,13 @@ for i in conditions.index:
                 # "timepoint" in the prediction metadata is the timepoint at which we START the simulation.
                 # We need to arrange it so the simulation also ENDS at a timepoint we can evaluate.
                 # In cases where the simulation is long-term, that's a hard problem. 
-                # Instead of solving lineage tracing on the fly (lolol), we just start from all available cell types and classify each result.
-                if conditions.loc[i, "does_simulation_progress"]:
-                    predictions_metadata = pd.merge(
-                        predictions_train_metadata[['timepoint', 'cell_type']].drop_duplicates(), 
-                        predictions_metadata[['perturbation', 'is_control', 'perturbation_type', "expression_level_after_perturbation"]],
-                        how = "cross", 
-                    )
+                # Instead of solving lineage tracing on the fly (lolol), we just start from all available cell types.
+                # During evaluation, we will select a subset that "makes sense" to compare to the observed post-perturbation data.
+                predictions_metadata = pd.merge(
+                    predictions_train_metadata[['timepoint', 'cell_type']].drop_duplicates(), 
+                    predictions_metadata[['perturbation', 'is_control', 'perturbation_type', "expression_level_after_perturbation"]],
+                    how = "cross", 
+                )
                 # If there are cell types only present in the test set, try reaching them from any training set cell type. 
                 train_set_cell_types = set(predictions_train_metadata["cell_type"])
                 test_set_cell_types = set(predictions_metadata["cell_type"]) 
@@ -206,7 +206,7 @@ for i in conditions.index:
                     for ct in train_set_cell_types:
                         x["cell_type"] = ct
                         predictions_metadata = pd.concat([predictions_metadata, x])
-                
+                assert any(predictions_metadata["is_control"]), "In timeseries experiments, there should be at least one control condition predicted."                
             else:
                 if conditions.loc[i, "starting_expression"] == "control":
                     predictions_metadata       = perturbed_expression_data_heldout_i.obs[all_except_elap+["expression_level_after_perturbation"]]
@@ -241,7 +241,7 @@ for i in conditions.index:
 
             # Sometimes AnnData has trouble saving pandas bool columns and sets, and they aren't needed here anyway.
             try:
-                del predictions.obs["is_control"] 
+                del predictions.obs["is_control"] # we can reconstruct this later via experimenter.find_controls().
                 del predictions.obs["is_treatment"] 
                 predictions.uns["perturbed_and_measured_genes"]     = list(predictions.uns["perturbed_and_measured_genes"])
                 predictions.uns["perturbed_but_not_measured_genes"] = list(predictions.uns["perturbed_but_not_measured_genes"])
