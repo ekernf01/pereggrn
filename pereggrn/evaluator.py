@@ -436,10 +436,10 @@ def evaluateCausalModel(
                     # For timeseries-versus-perturbseq splits, baseline and observed-to-predicted matching are more complicated. See `docs/timeseries_prediction.md` for details.
                     # this returns anndatas in the order OBSERVED, PREDICTED
                     current_heldout, predicted_expression_it = select_comparable_observed_and_predicted(
-                        conditions, 
-                        predicted_expression[i], 
-                        all_test_data, 
-                        i,
+                        conditions = conditions,
+                        predictions = predicted_expression[i], 
+                        perturbed_expression_data_heldout_i = all_test_data, 
+                        i = i,
                         # I don't care if this is somewhat redundant with the classifier used below. We need both even if not elegant.
                         classifier = experimenter.train_classifier(perturbed_expression_data_train_i, target_key = "cell_type"), 
                         is_timescale_strict=is_timescale_strict,
@@ -571,8 +571,8 @@ def select_comparable_observed_and_predicted(
         matched_predictions = pd.merge(
             test_data.obs      [["cell_type", 'perturbation', "expression_level_after_perturbation", "observed_index"]], 
             largest_effects.obs[["cell_type", 'perturbation', "expression_level_after_perturbation", "predicted_index"]], 
-            left_on =['perturbation'],
-            right_on=['perturbation'],
+            left_on =['perturbation', "expression_level_after_perturbation"],
+            right_on=['perturbation', "expression_level_after_perturbation"],
             how='inner', 
         )
 
@@ -810,7 +810,7 @@ def evaluateOnePrediction(
             experiment_name = experiment_name, 
             classifier = classifier, 
             projector = projector,
-                do_careful_checks = do_careful_checks, 
+            do_careful_checks = do_careful_checks, 
             do_parallel=do_parallel
         )
     print("\nMaking some example plots")
