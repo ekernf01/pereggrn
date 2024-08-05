@@ -85,6 +85,7 @@ def get_default_metadata():
         "prediction_timescale": "1",
         "does_simulation_progress": None,
         "visualization_embedding": "X_pca",
+        "species": "human",
     }
 
 def validate_metadata(
@@ -263,24 +264,24 @@ def do_one_run(
     networks: dict, 
     outputs: str,
     metadata: dict, 
-    human_tfs: list,
+    tfs: list,
     do_parallel: bool = True
-    ) -> anndata.AnnData:
+) -> anndata.AnnData:
     """Do one run (fit a GRN model and make predictions) as part of this experiment.
 
     Args:
         conditions (pd.DataFrame): Output of lay_out_runs
         i (int): A value from the conditions.index
-        human_tfs: A list of human TF's. You can pass in None if you never plan to restrict eligible regulators to just TF's.
+        tfs: A list of TF's. You can pass in None if you never plan to restrict eligible regulators to just TF's.
         Other args: see help(lay_out_runs)
 
     Returns:
         anndata.AnnData: Predicted expression
     """
-    if conditions.loc[i,'eligible_regulators'] == "human_tfs":
-        if human_tfs is None:
-            raise ValueError("If you want to restrict to only TF's as regulators, provide a list to human_tfs.")
-        eligible_regulators = human_tfs 
+    if conditions.loc[i,'eligible_regulators'].lower() in {"human_tfs", "tf", "tfs"}:
+        if tfs is None:
+            raise ValueError("If you want to restrict to only TF's as regulators, provide a list to tfs.")
+        eligible_regulators = tfs 
     elif conditions.loc[i,'eligible_regulators'] == "all":
         eligible_regulators = None # This triggers the default of using all genes
     elif conditions.loc[i,'eligible_regulators'] == "perturbed_genes":
@@ -289,7 +290,7 @@ def do_one_run(
             set( test_data.uns["perturbed_and_measured_genes"])
         )
     else:
-        raise ValueError("'eligible_regulators' must be 'human_tfs' or 'perturbed_genes' or 'all'")
+        raise ValueError("'eligible_regulators' must be 'tf' or 'tfs' or 'perturbed_genes' or 'all'")
     train_data.obs["is_control"] = train_data.obs["is_control"].astype(bool)
     print("Instantiating GRN object.", flush = True)
     grn = ggrn.GRN(

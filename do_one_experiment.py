@@ -25,7 +25,7 @@ parser.add_argument("--no_parallel", help="If provided, don't use loky paralleli
 parser.add_argument('--no_skip_bad_runs', dest='skip_bad_runs', action='store_false', help="Unless this flag is used, keep running when some runs hit errors.")
 parser.add_argument('--networks', type=str, default='../network_collection/networks', help="Location of our network collection on your hard drive")
 parser.add_argument('--data', type=str, default='../perturbation_data/perturbations', help="Location of our perturbation data on your hard drive")
-parser.add_argument('--tf', type=str, default = "../accessory_data/humanTFs.csv",     help="Location of our list of TFs on your hard drive")
+parser.add_argument('--tf', type=str, default = "../accessory_data/tf_lists",     help="Location of per-species lists of TFs on your hard drive")
 parser.add_argument('--output', type=str, default = "experiments",     help="Folder to save the output in.")
 parser.add_argument('--input', type=str, default = "experiments",     help="metadata.json should be in <input>/<experiment_name>/metadata.json.")
 
@@ -55,20 +55,16 @@ pereggrn_networks.set_grn_location(
 pereggrn_perturbations.set_data_path(
     args.data
 )
-try:
-    DEFAULT_HUMAN_TFs = pd.read_csv(args.tf)
-    DEFAULT_HUMAN_TFs = DEFAULT_HUMAN_TFs.loc[DEFAULT_HUMAN_TFs["Is TF?"]=="Yes", "HGNC symbol"]
-except Exception as e:
-    raise(f"TF list given in --tf was not found or was not in the right format. The specific error is: {repr(e)}")
 
 # Default args to this script for interactive use
 if args.experiment_name is None:
     args = Namespace(**{
-        "experiment_name": "1.8.1_0",
+        "experiment_name": "1.2.2_18",
         "amount_to_do": "missing_models",
         "save_trainset_predictions": False,
         "output": "experiments",
         "input": "experiments",
+        "tf": "../accessory_data/tf_lists",
         "save_models": False,
         "skip_bad_runs": False, # Makes debug/traceback easier
         "no_parallel": False, # Makes debug/traceback easier
@@ -79,6 +75,12 @@ outputs = os.path.join(args.output, args.experiment_name, "outputs")
 os.makedirs(outputs, exist_ok=True)
 metadata = experimenter.validate_metadata(experiment_name=args.experiment_name, input_folder=args.input)
 print("Starting at " + str(datetime.datetime.now()), flush = True)
+
+try:
+    tf_list_path = os.path.join(args.tf, metadata["species"] + ".txt")
+    TF_LIST = pd.read_csv(tf_list_path, header = None)[0]
+except FileNotFoundError:
+    raise FileNotFoundError(f"Could not find the TF list for {metadata['species']} at {tf_list_path}. Please check the species name (in metadata.json) and the accessory data location (the --tf arg to the pereggrn command line tool).")
 
 # Set up the perturbation and network data
 perturbed_expression_data, networks, conditions, timeseries_expression_data = experimenter.set_up_data_networks_conditions(
@@ -142,7 +144,7 @@ for i in conditions.index:
                         networks = networks, 
                         outputs = outputs,
                         metadata = metadata,
-                        human_tfs = DEFAULT_HUMAN_TFs,
+                        tfs = TF_LIST,
                         do_parallel=(not args.no_parallel),
                     )
                 train_time = time.time() - start_time
@@ -294,7 +296,6 @@ if args.amount_to_do in {"models", "missing_models", "evaluations"}:
         outputs = outputs,
         do_scatterplots = False,
         do_parallel = not args.no_parallel, 
-
     )
     evaluationPerPert.to_parquet(   os.path.join(outputs, "evaluationPerPert.parquet"))
     evaluationPerTarget.to_parquet( os.path.join(outputs, "evaluationPerTarget.parquet"))
