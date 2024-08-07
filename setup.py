@@ -29,6 +29,7 @@ setup(
         "scikit-learn",
         "pyyaml",
         "ggrn",
+		"ray[tune]",
     ],
     python_requires=">=3.7", 
     url='https://github.com/ekernf01/pereggrn',
