@@ -237,7 +237,7 @@ def lay_out_runs(
         "ignore" if conditions.loc[i, "network_datasets"] == "dense" else conditions.loc[i, "network_prior"]
     # Don't let the user specify a network but then ignore it.
     if conditions.loc[i, "network_prior"] == "ignore":
-        assert conditions.loc[i, "network_datasets"] != "dense", "You specified a sparse network (`network_datasets`) but then directed PEREGGRN to ignore it (`network_prior`=='ignore'). This is probably a mistake; try adding \n 'network_prior': 'restrictive' \n to the metadata. If you really need to do this, go ahead and file a github issue."
+        assert conditions.loc[i, "network_datasets"] == "dense", "You specified a sparse network (`network_datasets`) but then directed PEREGGRN to ignore it (`network_prior`=='ignore'). This is not great default behavior from us and probably not what you want. Try adding \n 'network_prior': 'restrictive' \n to the metadata. If you need to run this experiment as-is, go ahead and file a github issue."
 
     # Set a default about handling of time
     backends_with_explicit_timescales = [
