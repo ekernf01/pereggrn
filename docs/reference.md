@@ -121,10 +121,11 @@ The predictions in `predictions/*.h5ad` change in size depending on `type_of_spl
 
 Here is a description of the columns of `evaluationPerPert.parquet` and `evaluationPerTarget.parquet`. Many of these are only available in `evaluationPerPert.parquet`.
 
-- Evaluation metrics: `spearman, mse_top_20, mse_top_100, mse_top_200, mse, mae, proportion_correct_direction, pvalue_effect_direction`, `distance_in_pca`, `pvalue_targets_vs_non_targets`, `fc_targets_vs_non_targets`, `cell_type_correct`, `cell_label_accuracy`. 
+- Evaluation metrics: `spearman, mse_top_20, mse_top_100, mse_top_200, overlap_top_20, overlap_top_100, overlap_top_200, mse, mae, proportion_correct_direction, pvalue_effect_direction`, `distance_in_pca`, `pvalue_targets_vs_non_targets`, `fc_targets_vs_non_targets`, `cell_type_correct`, `cell_label_accuracy`. 
     - `mae` is mean absolute error. 
     - `mse` is mean squared error. 
     - `mse_top_n` is the mean squared error on the n genes with highest test-set fold change. 
+    - `overlap_top_n` number of genes present in the top n genes when ranked by either predicted or observed absolute log fold change. 
     - `proportion_correct_direction` is the proportion of genes going up (if they were predicted to go up) or down (if they were predicted to go down) or staying the same (if they were predicted to stay the same). `pvalue_effect_direction` is a p-value from a chi-squared test of a 3x3 table of up, down, unchanged for observed and predicted expression. 
     - `spearman`  is the Spearman correlation between the predicted log fold change and the observed log fold change, and `spearmanp` is the corresponding p-value. 
     - `cell_type_correct` (now renamed to `cell_label_accuracy`) is based on discrete training-set labels derived from predicted expression. 
