@@ -59,7 +59,7 @@ pereggrn_perturbations.set_data_path(
 # Default args to this script for interactive use
 if args.experiment_name is None:
     args = Namespace(**{
-        "experiment_name": "1.2.2_18",
+        "experiment_name": "1.2.2_15",
         "amount_to_do": "missing_models",
         "save_trainset_predictions": False,
         "output": "experiments",
@@ -67,7 +67,7 @@ if args.experiment_name is None:
         "tf": "../accessory_data/tf_lists",
         "save_models": False,
         "skip_bad_runs": False, # Makes debug/traceback easier
-        "no_parallel": False, # Makes debug/traceback easier
+        "no_parallel": True, # Makes debug/traceback easier
     })
 # Additional bookkeeping
 print("Running experiment", flush = True)
@@ -208,7 +208,7 @@ for i in conditions.index:
                     for ct in train_set_cell_types:
                         x["cell_type"] = ct
                         predictions_metadata = pd.concat([predictions_metadata, x])
-                assert any(predictions_metadata["is_control"]), "In timeseries experiments, there should be at least one control condition predicted."                
+                assert any(predictions_metadata["is_control"]), "In timeseries experiments, there should be at least one control condition predicted."   
             else:
                 if conditions.loc[i, "starting_expression"] == "control":
                     predictions_metadata       = perturbed_expression_data_heldout_i.obs[all_except_elap+["expression_level_after_perturbation"]]
@@ -359,8 +359,8 @@ print("Experiment done at " + str(datetime.datetime.now()), flush = True)
 # Avoid a useless error by defining main.
 # This has to do with how python packages typically make command line scripts available.
 # A way generally considered better would be to put all the code in main() or parse_args(), then call main() at the end.
-# This helps if you want to import this script and do e.g. unit tests on it. 
-def main(some_args):
+# This helps if you want to import this script and do e.g. unit tests on individual functions. 
+def main():
     return
 
 # def parse_arguments():
