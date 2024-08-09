@@ -415,8 +415,8 @@ def set_up_data_networks_conditions(metadata, amount_to_do, outputs):
         conditions.to_csv(        os.path.join(outputs, "new_conditions.csv") )
         conditions = pd.read_csv( os.path.join(outputs, "new_conditions.csv"), index_col=0 )
         if not conditions.equals(old_conditions):
-            print(conditions)
-            print(old_conditions)
+            conditions.to_csv(sep = "\t")
+            old_conditions.to_csv(sep = "\t")
             raise ValueError("Experiment layout has changed. Check diffs between conditions.csv and new_conditions.csv. If synonymous, delete conditions.csv and retry.")
     except FileNotFoundError:
         pass

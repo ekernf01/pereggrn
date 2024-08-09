@@ -84,6 +84,9 @@ METRICS = {
     "mse_top_20":                   lambda predicted, observed, baseline_predicted, baseline_observed: mse_top_n(predicted, observed, baseline_predicted, baseline_observed, n=20),
     "mse_top_100":                  lambda predicted, observed, baseline_predicted, baseline_observed: mse_top_n(predicted, observed, baseline_predicted, baseline_observed, n=100),
     "mse_top_200":                  lambda predicted, observed, baseline_predicted, baseline_observed: mse_top_n(predicted, observed, baseline_predicted, baseline_observed, n=200),
+    "overlap_top_20":               lambda predicted, observed, baseline_predicted, baseline_observed: overlap_top_n(predicted, observed, baseline_predicted, baseline_observed, n=20),
+    "overlap_top_100":              lambda predicted, observed, baseline_predicted, baseline_observed: overlap_top_n(predicted, observed, baseline_predicted, baseline_observed, n=100),
+    "overlap_top_200":              lambda predicted, observed, baseline_predicted, baseline_observed: overlap_top_n(predicted, observed, baseline_predicted, baseline_observed, n=200),
     "proportion_correct_direction": lambda predicted, observed, baseline_predicted, baseline_observed: np.mean(np.sign(observed - baseline_observed) == np.sign(predicted - baseline_predicted)),
     "pvalue_effect_direction":      lambda predicted, observed, baseline_predicted, baseline_observed: chi2_contingency(
         observed = pd.crosstab(
@@ -94,6 +97,11 @@ METRICS = {
     "pvalue_targets_vs_non_targets":  test_targets_vs_non_targets,
     "fc_targets_vs_non_targets": fc_targets_vs_non_targets,
 }
+
+def overlap_top_n(predicted, observed, baseline_predicted, baseline_observed, n):
+    top_n_observed  = rank(-np.abs( observed -  baseline_observed)) <= n
+    top_n_predicted = rank(-np.abs(predicted - baseline_predicted)) <= n
+    return np.sum(top_n_observed*top_n_predicted)
 
 def mse_top_n(predicted, observed, baseline_predicted, baseline_observed, n):
     top_n = rank(-np.abs(observed - baseline_observed)) <= n
@@ -373,7 +381,7 @@ def postprocessEvaluations(evaluations: pd.DataFrame,
     """
     evaluations   = pd.concat(evaluations)
     evaluations   = evaluations.merge(conditions,   how = "left", right_index = True, left_on = "index")
-    evaluations   = pd.DataFrame(evaluations.to_dict()) # This cleans up weird data types
+    evaluations   = pd.DataFrame(evaluations.reset_index().to_dict()) # This cleans up weird data types
     return evaluations
 
 def evaluateCausalModel(
@@ -549,8 +557,7 @@ def select_comparable_observed_and_predicted(
     test_data.obs["cell_type"] = test_data.obs["cell_type"].astype("str")
     predictions.obs["cell_type"] = predictions.obs["cell_type"].astype("str")
     test_data.obs["timepoint"] = test_data.obs["timepoint"].astype("Int64")
-    predictions.obs["takedown_timepoint"] = predictions.obs["takedown_timepoint"].astype("Int64")
-    
+    predictions.obs["takedown_timepoint"] = predictions.obs["takedown_timepoint"].astype(float).round(0).astype("Int64")
     # Match the timepoint to the observed data ... or not
     if is_timescale_strict:
         matched_predictions = pd.merge(
