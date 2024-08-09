@@ -33,6 +33,7 @@ Experiment metadata files are JSON dictionaries with a limited set of keys, many
 - `question` refers to `guiding_questions.txt` in this repo. 
 - `is_active` must be `true` or the experiment won't run. 
 - `refers_to` points to another Experiment. If A refers to B, then all key/value pairs are copied from B's metadata unless explicitly provided in A's metadata. You may not refer to an experiment that already refers to something. You may not refer to multiple experiments.
+- `species` is used to select a list of TF's from the collection of accessory data.
 - `expand` can be either `"grid"` or `"ladder"`. It governs how the metadata are combined into a table of experimental conditions. If you set `expand` to `"grid"` (default), then it works like the base R function `expand.grid`, creating a dataframe with all combinations. If you set `expand` to `"ladder"`, then it works like the base R function `cbind`, using the first items of all lists, then the second, etc. For example, if you specify `"data_split_seed":[0,1,2]` and `"method":["mean", "median", "RidgeCV"]`, then the default `"expand": "grid"` is to test all 9 combinations and the alternative `"expand": "ladder"`  tests the mean with seed 0, the median with seed 1, and RidgeCV with seed 2. 
 - `kwargs` is a dict of keyword args passed on to GEARS, or DCD-FG, or any method [wrapped via Docker](https://github.com/ekernf01/ggrn_docker_backend). By default, lists inside kwargs do not get `expand`ed as described above. If you want them to be expanded, for example to do a hyperparameter grid search, you need to use `kwargs_to_expand`. For example, if you have `"kwargs":{"penalty": [1,2,3], "dimension": [5,10]}` then you can search all six combinations by setting `kwargs_to_expand = ["penalty", "dimension"]`. 
 - `data_split_seed`: integer used to set the seed for repeatable data splits.
@@ -76,7 +77,7 @@ Experiment metadata files are JSON dictionaries with a limited set of keys, many
 - There are some metadata fields not yet documented. If this becomes an obstacle to you, file a github issue and we'll try to help out. Most code implementing these behaviors is in the `experimenter` module of the [pereggrn package](https://github.com/ekernf01/pereggrn). Use `pereggrn.experimenter.get_default_metadata()` to see the default values of each metadata field. Use `pereggrn.experimenter.get_required_keys()` to see which keys are required. Use `pereggrn.experimenter.get_optional_keys()` to see optional keys.
 
 
-### Outputs
+### Output files
 
 Here is an annotated layout of output files and folders produced for each Experiment.
 
@@ -100,6 +101,8 @@ Here is an annotated layout of output files and folders produced for each Experi
 │   ├── 0.h5ad # ... from row 0 of conditions.csv
 │   ├── 1.h5ad # ... from row 1 of conditions.csv
 │   ├── ...
+├── embeddings # This is only generated for timeseries experiments. It displays train, test, and predicted data all projected onto the same 2D embedding. 
+│   ├── 0 
 ├── predictions # Predictions on test data 
 │   ├── 0.h5ad 
 │   ├── 1.h5ad
@@ -112,15 +115,39 @@ Here is an annotated layout of output files and folders produced for each Experi
 The predictions in `predictions/*.h5ad` change in size depending on `type_of_split`. 
 
 - For most data splits, the predictions are the same size as the test data. This often includes the same gene perturbed multiple times, if the same gene is perturbed multiple times in the test data. 
-- For the "timeseries" data split, predictions will contain separate samples for each combination of perturbation, cell type, starting timepoint, and prediction timescale (number of iterations). Because this is already large, we avoid including the same gene perturbed multiple times, even if the same gene is perturbed multiple times in the test data. See `docs/timeseries_prediction.md` in this repo for more explanation of the idiosyncracies of training on a timeseries dataset and testing on a perturb-seq dataset. 
+- For the "timeseries" data split, predictions will contain separate samples for each combination of perturbation, cell type, starting timepoint, and prediction timescale (number of iterations). Because this is already large, we avoid including the same gene perturbed multiple times, even if the same gene is perturbed multiple times in the test data.
 
-Here is a description of the columns of `evaluationPerPert.parquet` and `evaluationPerTarget.parquet`.
+### Available evaluation metrics and annotations
 
-- Evaluation metrics: `cell_type_correct, spearman, mse_top_20, mse_top_100, mse_top_200, mse, mae, proportion_correct_direction, proportion_correct_direction_enrichment_pvalue`, `distance_in_pca`. `mae` is mean absolute error. `mse` is mean squared error. `mse_top_n` is the mean squared error on the n genes with highest test-set fold change. `proportion_correct_direction` is the proportion of genes going up (if they were predicted to go up) or down (if they were predicted to go down) or staying the same (if they were predicted to stay the same). `proportion_correct_direction_enrichment_pvalue` is a p-value from a chi-squared test of a 3x3 table of up, down, unchanged for observed and predicted expression. `spearman`  is the Spearman correlation between the predicted log fold change and the observed log fold change, and `spearmanp` is the corresponding p-value. `cell_type_correct` is based on discrete training-set labels derived from predicted expression (we apologize that these may not be "cell types"). `standard_deviation` measures not accuracy but rather how close the predictions are to just being constant. Many of these are only available per-pert or per-target and not both. `mae_baseline` and `mae_benefit` were for comparing each condition to a baseline but are now deprecated. `distance_in_pca` measures the (Euclidean) distance between observed and predicted gene expression in a PCA substance.
+Here is a description of the columns of `evaluationPerPert.parquet` and `evaluationPerTarget.parquet`. Many of these are only available in `evaluationPerPert.parquet`.
+
+- Evaluation metrics: `spearman, mse_top_20, mse_top_100, mse_top_200, mse, mae, proportion_correct_direction, pvalue_effect_direction`, `distance_in_pca`, `pvalue_targets_vs_non_targets`, `fc_targets_vs_non_targets`, `cell_type_correct`, `cell_label_accuracy`. 
+    - `mae` is mean absolute error. 
+    - `mse` is mean squared error. 
+    - `mse_top_n` is the mean squared error on the n genes with highest test-set fold change. 
+    - `proportion_correct_direction` is the proportion of genes going up (if they were predicted to go up) or down (if they were predicted to go down) or staying the same (if they were predicted to stay the same). `pvalue_effect_direction` is a p-value from a chi-squared test of a 3x3 table of up, down, unchanged for observed and predicted expression. 
+    - `spearman`  is the Spearman correlation between the predicted log fold change and the observed log fold change, and `spearmanp` is the corresponding p-value. 
+    - `cell_type_correct` (now renamed to `cell_label_accuracy`) is based on discrete training-set labels derived from predicted expression. 
+    - `standard_deviation` measures not accuracy but rather how close the predictions are to just being constant. Many of these are only available per-pert or per-target and not both. 
+    - `mae_baseline` and `mae_benefit` were for comparing each condition to a baseline but are now deprecated. 
+    - `distance_in_pca` measures the (Euclidean) distance between observed and predicted gene expression in a PCA substance. 
+    - `fc_targets_vs_non_targets` separates targets (any gene predicted to change) from non-targets (any gene predicted to remain the same), and computes the difference in log fold changes between these groups of genes. This is tested via ANOVA, with results in `pvalue_targets_vs_non_targets`.
     - New user-added evaluation metrics will appear next to these; see `how_to.md` for more information. 
-- Experimental conditions merged from `conditions.csv`: `perturbation condition unique_id nickname question data_split_seed type_of_split regression_method num_genes eligible_regulators is_active facet_by color_by factor_varied merge_replicates perturbation_dataset network_datasets refers_to pruning_parameter pruning_strategy network_prior desired_heldout_fraction starting_expression feature_extraction control_subtype predict_self low_dimensional_structure low_dimensional_training matching_method prediction_timescale baseline_condition target`.
+- Experimental conditions merged from `conditions.csv`: 
+    - These include: `perturbation condition unique_id nickname question data_split_seed type_of_split regression_method num_genes eligible_regulators is_active facet_by color_by factor_varied merge_replicates perturbation_dataset network_datasets allowed_regulators_vs_network_regulators refers_to pruning_parameter pruning_strategy network_prior desired_heldout_fraction starting_expression feature_extraction control_subtype predict_self low_dimensional_structure low_dimensional_training matching_method prediction_timescale baseline_condition visualization_embedding species`. 
+    - See documentation above for the meaning of each of these. 
 - `gene`: the target gene (in `evaluationPerTarget.parquet`) or the perturbed gene (in `evaluationPerPert.parquet`) 
 - Degree statistics from our network collection: anything prefixed by `in-degree_*` or `out-degree_*`
-- Merged from per-gene metadata on transcript structure and mutation frequency: `transcript chr n_exons tx_start tx_end bp mu_syn mu_mis mu_lof n_syn n_mis n_lof exp_syn exp_mis exp_lof syn_z mis_z lof_z pLI n_cnv exp_cnv cnv_z`
-- Expression characteristics of this gene in the training data: `highly_variable highly_variable_rank means dispersions dispersions_norm`
-- Strength and reproducibility of the perturbation effects: `logFCNorm2 pearsonCorr spearmanCorr logFC`. Note: `logFC` refers to the targeted transcript only while `logFCNorm2` refers to global effect size. Only available in `evaluationPerPert.parquet`, and only if the evaluation metadata already have these calculated. 
+- Merged from per-gene metadata on transcript structure and mutation frequency: 
+    - These include `transcript chr n_exons tx_start tx_end bp mu_syn mu_mis mu_lof n_syn n_mis n_lof exp_syn exp_mis exp_lof syn_z mis_z lof_z pLI n_cnv exp_cnv cnv_z`
+    - See the accessory data repo for information on the source of these gene annotations. 
+- Expression characteristics of this gene in the training data:
+    - `highly_variable highly_variable_rank means dispersions dispersions_norm`. 
+    - These are computed via scanpy's mean and dispersion estimators. These are calculated during dataset ingestion and the exact meaning may vary by dataset.
+- Strength and reproducibility of the perturbation effects: 
+    - `logFCNorm2 pearsonCorr spearmanCorr logFC`. 
+    - Note: `logFC` refers to the targeted transcript only while `logFCNorm2` refers to global effect size. 
+    - These are calculated during dataset ingestion and the exact meaning may vary by dataset.
+- Handling of timeseries during evaluations:
+    - `is_timescale_strict`: boolean. If TRUE, then the observed data are compared against predictions from the same time-point as the perturbation takedown. If FALSE, then predictions are sometimes compared against earlier time-points, if there is a block in differentiation. The method to choose a time-point to predict is still in flux at time of writing (2024 Aug 09); please ask us to update this information. **Unless dramatic effects on differentiation are observed in the test data, we recommend most users focus on results where `is_timescale_strict` is TRUE.**
+    - `does_simulation_progress` distinguishes between methods like PRESCIENT, where the timescale is calibrated to literally reflect the input data labels, and methods like CellOracle, where the number of iterations is user-defined and all effects are short-term in nature. 
