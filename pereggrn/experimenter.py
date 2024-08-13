@@ -152,7 +152,7 @@ def validate_metadata(
     # Check a few of the values
     for k in metadata["kwargs_to_expand"]:
         assert k not in metadata, f"Key {k} names both an expandable kwarg and an Experiment metadata key. Sorry, but you have to call that kwarg something else. See get_default_metadata() and get_required_keys() for names of keys reserved for the benchmarking code."
-    assert metadata["perturbation_dataset"] in set(pereggrn_perturbations.load_perturbation_metadata().query("is_ready=='yes'")["name"]), "Cannot find perturbation data under that name. Try pereggrn_perturbations.load_perturbation_metadata()."
+    assert metadata["perturbation_dataset"] in set(pereggrn_perturbations.load_perturbation_metadata().query("is_ready=='yes'")["name"]), f"Cannot find perturbation data called {metadata['perturbation_dataset']}. Try pereggrn_perturbations.load_perturbation_metadata()."
     for netName in metadata["network_datasets"].keys():
         assert netName in set(pereggrn_networks.load_grn_metadata()["name"]).union({"dense", "empty"}) or "random" in netName, "Networks exist as named"
         assert "subnets" in metadata["network_datasets"][netName].keys(), "Optional metadata fields filled correctly"

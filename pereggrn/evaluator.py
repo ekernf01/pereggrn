@@ -134,6 +134,8 @@ def makeMainPlots(
         evaluationPerPert.index = [p[1] for p in evaluationPerPert.index]
     except IndexError:
         pass
+    except TypeError:
+        pass
     vlnplot = {}
     _ = alt.data_transformers.disable_max_rows()
     if color_by is not None:
@@ -437,15 +439,19 @@ def evaluateCausalModel(
                 outputs = os.path.join(outputs, "embeddings", str(i)),
             )
         for is_timescale_strict in [True, False]:
+            print(f"Evaluating condition {i}, with is_timescale_strict {is_timescale_strict}.")
             evaluations[is_timescale_strict] = dict()
             for prediction_timescale in timescales:
+                print(f"    Timescale selected: {prediction_timescale}.")
+                predicted_expression_it = predicted_expression[i]
+                predicted_expression_it = predicted_expression_it[predicted_expression_it.obs["prediction_timescale"]==prediction_timescale, :]
                 if conditions.loc[i, "type_of_split"] == "timeseries":
                     assert any(predicted_expression[i].obs["is_control"]), f"No controls found among predictions when evaluating condition {i}."
                     # For timeseries-versus-perturbseq splits, baseline and observed-to-predicted matching are more complicated. See `docs/timeseries_prediction.md` for details.
                     # this returns anndatas in the order OBSERVED, PREDICTED
-                    current_heldout, predicted_expression_it = select_comparable_observed_and_predicted(
+                    current_heldout, matched_predictions = select_comparable_observed_and_predicted(
                         conditions = conditions,
-                        predictions = predicted_expression[i], 
+                        predictions = predicted_expression_it, 
                         perturbed_expression_data_heldout_i = all_test_data, 
                         i = i,
                         # I don't care if this is somewhat redundant with the classifier used below. We need both even if not elegant.
@@ -457,12 +463,12 @@ def evaluateCausalModel(
                     # For the predictions, it should be a **prediction under no perturbations** from the same timepoint and cell type. 
                     # Because the upstream code selects perturbations to predict from the test set, the names of the controls should match the heldout data.
                     assert any(current_heldout.obs["is_control"]), f"No controls found among heldout data when evaluating condition {i}, timescale {prediction_timescale}."
-                    assert any(predicted_expression_it.obs["is_control"]), f"No controls found among predictions when evaluating condition {i}, timescale {prediction_timescale}."
+                    assert any(matched_predictions.obs["is_control"]), f"No controls found among predictions when evaluating condition {i}, timescale {prediction_timescale}."
                     baseline_observed = current_heldout.copy()[current_heldout.obs["is_control"], :]
-                    baseline_predicted = predicted_expression_it[ predicted_expression_it.obs["is_control"], : ].copy()
+                    baseline_predicted = matched_predictions[ matched_predictions.obs["is_control"], : ].copy()
                 else:
                     current_heldout = all_test_data
-                    predicted_expression_it = predicted_expression[i]
+                    matched_predictions = predicted_expression_it
                     # For train-test splits of a single perturbset, the controls are all in the training data. 
                     # The same baseline can be used for the training and test data, and it needs to be extracted from the training data. 
                     assert any(perturbed_expression_data_train_i.obs["is_control"]), "No controls found."
@@ -472,7 +478,7 @@ def evaluateCausalModel(
                 classifier_labels = "cell_type" if (conditions.loc[i, "type_of_split"]=="timeseries") else None # If you pass None, it will look for "louvain" or give up.
                 evaluations[is_timescale_strict][prediction_timescale] = evaluateOnePrediction(
                     expression = current_heldout,
-                    predictedExpression = predicted_expression_it,
+                    predictedExpression = matched_predictions,
                     baseline_observed = baseline_observed,
                     baseline_predicted = baseline_predicted,
                     doPlots=do_scatterplots,
@@ -492,6 +498,7 @@ def evaluateCausalModel(
                 evaluations[is_timescale_strict][prediction_timescale][1]["index"] = i
                 evaluations[is_timescale_strict][prediction_timescale][0]["prediction_timescale"] = prediction_timescale
                 evaluations[is_timescale_strict][prediction_timescale][1]["prediction_timescale"] = prediction_timescale
+        print(f"Finished evaluating condition {i}. Concatenating outputs.")
         evaluationPerPert  [i] = pd.concat([evaluations[is_timescale_strict][t][0] for t in timescales for is_timescale_strict in [True, False]])
         evaluationPerTarget[i] = pd.concat([evaluations[is_timescale_strict][t][1] for t in timescales for is_timescale_strict in [True, False]])
         assert "prediction_timescale" in evaluationPerPert[i].columns
@@ -678,21 +685,16 @@ def evaluate_per_pert(
     predicted = safe_squeeze(predictedExpression[i, :].mean(axis=0))
     observed  = safe_squeeze(         expression[i, :].mean(axis=0))
     assert observed.shape[0] == expression.shape[1], f"For perturbation {pert}, observed and predicted are different shapes."
-    def is_constant(x):
-        return np.std(x) < 1e-12
-    if np.isnan(predicted).any() or is_constant(predicted - baseline_predicted) or is_constant(observed - baseline_observed):
-        return pd.DataFrame({m:np.nan for m in METRICS.keys()}, index = [pert])
-    else:
-        results = {k:m(predicted, observed, baseline_predicted, baseline_observed) for k,m in METRICS.items()}
-        results["cell_type_correct"] = np.nan
-        if classifier is not None:
-            class_observed = classifier.predict(np.reshape(observed, (1, -1)))[0]
-            class_predicted = classifier.predict(np.reshape(predicted, (1, -1)))[0]
-            results["cell_type_correct"] = 1.0 * (class_observed == class_predicted)
-        results["distance_in_pca"] = np.nan
-        if projector is not None:
-            results["distance_in_pca"] = np.linalg.norm(projector.transform(observed.reshape(1, -1)) - projector.transform(predicted.reshape(1, -1)))**2
-        return pd.DataFrame(results, index = [pert])
+    results = {k:m(predicted, observed, baseline_predicted, baseline_observed) for k,m in METRICS.items()}
+    results["cell_type_correct"] = np.nan
+    if classifier is not None:
+        class_observed  = classifier.predict(np.reshape(observed, (1, -1)))[0]
+        class_predicted = classifier.predict(np.reshape(predicted, (1, -1)))[0]
+        results["cell_type_correct"] = 1.0 * (class_observed == class_predicted)
+    results["distance_in_pca"] = np.nan
+    if projector is not None:
+        results["distance_in_pca"] = np.linalg.norm(projector.transform(observed.reshape(1, -1)) - projector.transform(predicted.reshape(1, -1)))**2
+    return pd.DataFrame(results, index = [pert])
 
 def evaluate_across_perts(expression: anndata.AnnData, 
                           predictedExpression: anndata.AnnData, 
@@ -820,7 +822,6 @@ def evaluateOnePrediction(
             do_careful_checks = do_careful_checks, 
             do_parallel=do_parallel
         )
-    print("\nMaking some example plots")
     metrics["spearman"] = metrics["spearman"].astype(float)
     hardest = metrics["spearman"].idxmin()
     easiest = metrics["spearman"].idxmax()
