@@ -199,12 +199,20 @@ def lay_out_runs(
     
     # kwargs is a dict containing arbitrary kwargs for backend code (e.g. batch size for DCD-FG). 
     # We expand these if the user says so.
+    # If expand==grid, we expect a dict and we add the keys in kwargs_to_expand to the metadata, so they will get caught by the expander code below.
+    # If expand==ladder, we expect a list of dicts. we verify the length and keep them as is.
     kwargs = metadata["kwargs"].copy()
     kwargs_to_expand = metadata["kwargs_to_expand"].copy()
     del metadata["kwargs"]
     del metadata["kwargs_to_expand"]
     for k in kwargs_to_expand:
-        metadata[k] = kwargs[k]
+        if metadata["expand"] == 'grid':
+            assert type(kwargs)==dict, "When 'expand' is 'grid', 'kwargs' must be a dict."
+            metadata[k] = kwargs[k]
+        elif metadata["expand"] == 'ladder':
+            assert type(kwargs)==list, "When 'expand' is 'ladder', 'kwargs' must be a list of dicts."
+        else:
+            raise ValueError(f"metadata['expand'] must be 'grid' or 'ladder'; got {metadata['expand']}")
     
     # Wrap each singleton in a list. Otherwise product() and len() will misbehave on strings.
     for k in metadata.keys():
@@ -224,6 +232,7 @@ def lay_out_runs(
         all_lengths = {k:len(v) for k,v in metadata.items()}
         num_conditions = int(np.max(list(all_lengths.values())))
         assert all( [l in (1, num_conditions) for l in all_lengths.values()] ), f"When 'expand' is 'ladder', length must be 1 or the max for all metadata entries. \n\nAll lengths: {all_lengths}"
+        assert len(kwargs) == num_conditions, f"When 'expand' is 'ladder', 'kwargs' must be a list whose length matches the number of conditions. \n\nLength of kwargs: {len(kwargs)} \n\nNumber of conditions: {num_conditions}"
         metadata = {k:(v*num_conditions if all_lengths[k]==1 else v) 
                     for k,v in metadata.items()}
         conditions =  pd.DataFrame(metadata)
@@ -313,6 +322,18 @@ def do_one_run(
         """
         return json.loads(x.to_json())
     print("Fitting models.", flush = True)
+    if metadata["expand"] == "grid":
+        # kwargs is a dict that may contain lists
+        kwargs_expanded_or_not = {
+            k:simplify_type(conditions.loc[i,:])[k] if k in metadata["kwargs_to_expand"] else metadata["kwargs"][k]
+            for k in metadata["kwargs"].keys()
+        }
+    elif metadata["expand"] == "ladder":
+        # kwargs is a list of dicts
+        kwargs_expanded_or_not = metadata["kwargs"][i]
+    else: 
+        # Eric is a mess
+        raise ValueError(f"metadata['expand'] must be 'grid' or 'ladder'; got {metadata['expand']}")
     grn.fit(
         method                               = conditions.loc[i,"regression_method"], 
         cell_type_labels                     = "cell_type",
@@ -327,10 +348,7 @@ def do_one_run(
         low_dimensional_value                = conditions.loc[i,"low_dimensional_value"],
         prediction_timescale                 = conditions.loc[i,"prediction_timescale"],
         do_parallel = do_parallel,
-        kwargs                               = {
-                                                k:simplify_type(conditions.loc[i,:])[k] if k in metadata["kwargs_to_expand"] else metadata["kwargs"][k] 
-                                                for k in metadata["kwargs"].keys()
-                                                },
+        kwargs                               = kwargs_expanded_or_not,
     )
     return grn
 

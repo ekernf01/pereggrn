@@ -223,7 +223,7 @@ def addGeneMetadata(
             how = "outer", # Will deal with missing info later
             left_on="perturbation", 
             right_on="gene"
-        )   
+        )
 
     # Measures derived from the training data, e.g. overdispersion
     expression_characteristics = [
@@ -235,7 +235,7 @@ def addGeneMetadata(
         df = pd.merge(
             adata.var[expression_characteristics],
             df.copy(),
-            how = "outer", # This yields missing values. Will deal with that later
+            how = "right", # This yields missing values. Will deal with that later
             left_index=True, 
             right_on="gene")
     # Proteoform diversity information is not yet used because it would be hard to summarize this into a numeric measure of complexity.
@@ -270,7 +270,7 @@ def addGeneMetadata(
         df = pd.merge(
             evolutionary_constraint,
             df.copy(),
-            how = "outer", # This yields missing values. Will deal with that later
+            how = "right", # This yields missing values. Will deal with that later
             left_on="gene", 
             right_on="gene")
     
@@ -294,9 +294,10 @@ def addGeneMetadata(
         df = pd.merge(
             degree,
             df.copy(),
-            how = "outer", # This yields missing values. Will deal with that later
+            how = "right", # This yields missing values. Will deal with that later
             left_on="gene", 
-            right_on="gene")
+            right_on="gene"
+        )
     try:
         df.reset_index(inplace=True)
     except:
@@ -489,9 +490,21 @@ def evaluateCausalModel(
                     do_parallel=do_parallel,
                     is_timeseries = (conditions.loc[i, "type_of_split"] == "timeseries"),
                 )
-                # Add detail on characteristics of each gene that might make itq more predictable
-                evaluations[is_timescale_strict][prediction_timescale][0], _ = addGeneMetadata(evaluations[is_timescale_strict][prediction_timescale][0], genes_considered_as="perturbations", adata=perturbed_expression_data_train_i, adata_test=perturbed_expression_data_heldout_i, path_to_accessory_data=path_to_accessory_data)
-                evaluations[is_timescale_strict][prediction_timescale][1], _ = addGeneMetadata(evaluations[is_timescale_strict][prediction_timescale][1], genes_considered_as="targets"      , adata=perturbed_expression_data_train_i, adata_test=perturbed_expression_data_heldout_i, path_to_accessory_data=path_to_accessory_data)
+                # Add detail on characteristics of each gene that might make it more predictable
+                evaluations[is_timescale_strict][prediction_timescale][0], _ = addGeneMetadata(
+                    evaluations[is_timescale_strict][prediction_timescale][0],
+                    genes_considered_as="perturbations",
+                    adata=perturbed_expression_data_train_i,
+                    adata_test=current_heldout, 
+                    path_to_accessory_data=path_to_accessory_data
+                )
+                evaluations[is_timescale_strict][prediction_timescale][1], _ = addGeneMetadata(
+                    evaluations[is_timescale_strict][prediction_timescale][1],
+                    genes_considered_as="targets",
+                    adata=perturbed_expression_data_train_i,
+                    adata_test=current_heldout,
+                    path_to_accessory_data=path_to_accessory_data
+                )
                 evaluations[is_timescale_strict][prediction_timescale][0]["is_timescale_strict"] = is_timescale_strict
                 evaluations[is_timescale_strict][prediction_timescale][1]["is_timescale_strict"] = is_timescale_strict
                 evaluations[is_timescale_strict][prediction_timescale][0]["index"] = i
