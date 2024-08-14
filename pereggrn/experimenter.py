@@ -78,6 +78,7 @@ def get_default_metadata():
         'eligible_regulators': "all",
         "merge_replicates": False,
         "network_datasets":{"dense":{}},
+        "cell_type_sharing_strategy":"identical",
         "low_dimensional_structure": "none",
         "low_dimensional_training": "svd",
         "low_dimensional_value": None,
@@ -321,7 +322,6 @@ def do_one_run(
             dict
         """
         return json.loads(x.to_json())
-    print("Fitting models.", flush = True)
     if metadata["expand"] == "grid":
         # kwargs is a dict that may contain lists
         kwargs_expanded_or_not = {
@@ -334,10 +334,12 @@ def do_one_run(
     else: 
         # Eric is a mess
         raise ValueError(f"metadata['expand'] must be 'grid' or 'ladder'; got {metadata['expand']}")
+
+    print("Fitting models.", flush = True)
     grn.fit(
         method                               = conditions.loc[i,"regression_method"], 
         cell_type_labels                     = "cell_type",
-        cell_type_sharing_strategy           = "identical",
+        cell_type_sharing_strategy           = conditions.loc[i,"cell_type_sharing_strategy"],
         network_prior                        = conditions.loc[i,"network_prior"],
         pruning_strategy                     = conditions.loc[i,"pruning_strategy"],
         pruning_parameter                    = conditions.loc[i,"pruning_parameter"],
