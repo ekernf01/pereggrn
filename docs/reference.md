@@ -6,11 +6,10 @@ PEREGGRN: PErturbation Response Evaluation via a Grammar of Gene Regulatory Netw
 
 ### Basic operations 
 
-The benchmarks in this project are composed of small, structured folders called Experiments. 
+The `pereggrn` software was written for an [expression forecasting benchmark project](https://github.com/ekernf01/perturbation_benchmarking). The benchmarks in this project are composed of small, structured folders called Experiments, and `pereggrn` operates on one Experiment at a time. 
 
-- Metadata fully describing each Experiment lives in a file `experiments/<experiment_name>/metadata.json`. 
-- Outputs go to `experiments/<experiment_name>/outputs`. 
-- By convention, stdout and stderr go to `experiments/<experiment_name>/{stdout.txt|err.txt}`. 
+- Metadata fully describing each Experiment lives in a file `experiments/<experiment_name>/metadata.json`. This location can be customized in the call to `pereggrn`; see `pereggrn -h` for help. 
+- Outputs go to `experiments/<experiment_name>/outputs`. This location can be customized in the call to `pereggrn`; see `pereggrn -h` for help.
 
 To run the experiment specified by `experiments/1.0_0/metadata.json`, we would do:
 
@@ -20,40 +19,40 @@ conda activate ggrn
 pereggrn --experiment_name 1.0_0 --amount_to_do missing_models --save_trainset_predictions \
     > experiments/1.0_0/stdout.txt 2> experiments/1.0_0/err.txt
 ```
-To see the reference manual describing the flags used in that call and all others, run `pereggrn -h`.
+To see the reference manual describing the flags used in that call and all other arguments, run `pereggrn -h`.
 
 ### Metadata specifying an experiment
 
-Experiment metadata files are JSON dictionaries with a limited set of keys, many optional. Most values can be either a single value, or a list. If a list is provided, usually the experiment is run once for each item in the list (see `expand` below). Here are the most important fields.
+Experiment metadata files are JSON dictionaries with a limited set of keys. Many keys are optional and many are required. Most values can be either a single value, or a list. If a list is provided, usually the experiment is run once for each item in the list (see `expand` below). Here are all of the possible fields.
 
 - `perturbation_dataset` describes a dataset using the same names as our perturbation dataset collection. Only one dataset is allowed per Experiment. 
 - `readme` describes the purpose of the experiment. 
 - `nickname` conveys the essence curtly. 
 - `unique_id` must match the folder the Experiment is in.
-- `question` refers to `guiding_questions.txt` in this repo. 
+- `question` refers to `guiding_questions.txt` in the benchmarking results repo. You can put anything here; it is not accessed by the code and it is primarily to help the creator stay organized.
 - `is_active` must be `true` or the experiment won't run. 
-- `refers_to` points to another Experiment. If A refers to B, then all key/value pairs are copied from B's metadata unless explicitly provided in A's metadata. You may not refer to an experiment that already refers to something. You may not refer to multiple experiments.
+- `refers_to` points to another Experiment. If A refers to B, then all key/value pairs are copied from B's metadata unless explicitly provided in A's metadata. You may not refer to an experiment that already refers to an Experiment. You may not refer to multiple experiments.
 - `species` is used to select a list of TF's from the collection of accessory data.
 - `expand` can be either `"grid"` or `"ladder"`. It governs how the metadata are combined into a table of experimental conditions. If you set `expand` to `"grid"` (default), then it works like the base R function `expand.grid`, creating a dataframe with all combinations. If you set `expand` to `"ladder"`, then it works like the base R function `cbind`, using the first items of all lists, then the second, etc. For example, if you specify `"data_split_seed":[0,1,2]` and `"method":["mean", "median", "RidgeCV"]`, then the default `"expand": "grid"` is to test all 9 combinations and the alternative `"expand": "ladder"`  tests the mean with seed 0, the median with seed 1, and RidgeCV with seed 2. 
-- `kwargs` depends on `expand`. 
+- `kwargs` allows you to pass additional args through to different methods that `pereggrn` interfaces with. The exact behavior depends on `expand` and `kwargs_to_expand`.
     - If `expand=='grid'`, `kwargs` is a dict of keyword args. These are passed to GGRN, which will send them through to the current backend -- GEARS, or DCD-FG, or any method [wrapped via Docker](https://github.com/ekernf01/ggrn_docker_backend). Lists inside kwargs do not get `expand`ed into a grid by default, but if you want some of them to be expanded, for example to do a hyperparameter grid search, you can use `kwargs_to_expand`. For example, if you have `"kwargs":{"penalty": [1,2,3], "dimension": [5,10]}` then you can search all six combinations by setting `kwargs_to_expand = ["penalty", "dimension"]`. 
     - If `expand=='ladder'`, `kwargs` is a list of dicts of keyword args. These are passed to GGRN, which will send them through to the current backend. `kwargs_to_expand` is ignored.
 - `data_split_seed`: integer used to set the seed for repeatable data splits.
 - `type_of_split`: how the data are split.
     - if "interventional" (default), then any perturbation occurs in either the training or the test set, but not both. 
-    - If "simple", then we use a simple random split, and replicates of the same perturbation are allowed to go into different folds or the same fold.
+    - If "simple", then we use a simple random split, and replicates of the same perturbation are allowed to go into different folds or the same fold. All controls still go in the training data.
     - If "genetic_interaction", we put single perturbations and controls in the training set, and multiple perturbations in the test set.
     - If "demultiplexing", we put multiple perturbations and controls in the training set, and single perturbations in the test set.
     - If "stratified", we put some samples from each perturbation in the training set, and if there is replication, we put some in the test set. 
-    - If "custom", we load the test set from the file 'custom_test_sets/<data_split_seed>.json'.
+    - If "custom", we load the test set from the file 'custom_test_sets/<data_split_seed>.json'. It should be formatted as a json list containing names of observations to reserve for the test set. See the how-to for more help doing this.
     - If "timeseries", then we assume the data are already split into separate `train.h5ad` (containing timeseries data) and `test.h5ad` (containing perturb-seq or similar). 
 - `baseline_condition` DEPRECATED. This is a number, most often 0. This experimental condition, which corresponds to the same-numbered h5ad file in the `predictions` output and the same-numbered row in the `conditions.csv` output, is used as a baseline for computing performance improvement over baseline.
-- `network_datasets` describes a GRN using the same names as our network collection. The behavior is complicated because the network collection is hierarchical: individual sources often include tissue-specific subnetworks. The value associated with the `network_datasets` key is a dict where keys are network sources and values are (sub-)dicts controlling which tissue-specific networks are included and whether/how they are aggregated. Each (sub-)dict controls behavior as follows. 
+- `network_datasets` describes a GRN using the same names as our network collection. The behavior is complicated because the network collection is hierarchical: individual sources often include tissue-specific subnetworks. The value associated with the `network_datasets` key is a dict. In this dict, keys are network sources. Values are (sub-)dicts controlling which tissue-specific networks are included and whether/how they are aggregated. Each (sub-)dict controls behavior as follows. 
     - To use only certain tissue-specific subnetworks, set `subnets` to a list naming them. To use all, set subnets to an empty list (default).
-    - To take the union of the subnetworks, for example to compare the entire CellNet collection to the entire ANANSE collection, set `do_aggregate_subnets` to `true`. To keep subnetworks separate, for example to compare all tissue-specific networks from CellNet, set `do_aggregate_subnets` to `false` (default).
+    - To take the union of the subnetworks, for example to compare the entire CellNet collection to the entire ANANSE collection, set `do_aggregate_subnets` to `true`. To keep subnetworks separate, for example to compare all tissue-specific networks from CellNet, set `do_aggregate_subnets` to `false` (default). These are meant to be used with `"expand":"grid"`, and using non-default options with `"expand":"ladder"` could cause disastrous bugs -- sorry. 
     - You can use `empty` or `dense` for a network with no edges or all possible edges. Default is `dense`. By dense, we mean fully connected.
     - An empty (sub-)dict will cause the program to take the union of all subnets.
-    - This example from experiment `1.3.2_9` compares a dense network, and empty network, and nine separate cell-type-specific networks from the Magnum compendium. 
+    - This example from experiment `1.3.2_9` compares a dense network, an empty network, and nine separate cell-type-specific networks from the Magnum compendium. 
 
             "network_datasets": {
                 "empty": {},
@@ -73,7 +72,7 @@ Experiment metadata files are JSON dictionaries with a limited set of keys, many
                     "do_aggregate_subnets": false
                 }
             }
-- For discussion of `does_simulation_progress`, see `docs/timeseries_prediction.md`. 
+- `does_simulation_progress` distinguishes between methods like PRESCIENT, where the timescale is calibrated to literally reflect the input data labels, and methods like CellOracle, where the number of iterations is user-defined and all effects are short-term in nature. If true, simulations starting at time T and progressing for S steps are compared against observations from time T+S during evaluation. If false, simulations starting at time T and progressing for S steps are compared against observations from time T (not T+S) during evaluation. `pereggrn` attempts to guess this for our backends, but if you add your own, you should specify it.
 - You can add standard all GGRN args to the metadata; they are documented in the [ggrn repo](https://github.com/ekernf01/ggrn). The `prediction_timescale` arg should be given as a comma-separated string that can be parsed as ints, e.g. "1,3,5". 
 - `visualization_embedding` refers to a field in the training data's `obsm` that is used to plot train, test, and predictions all on the same coordinate system. To obtain these plots, make sure the provided value is present in the `.obsm` attribute of the training data.
 - There are some metadata fields not yet documented. If this becomes an obstacle to you, file a github issue and we'll try to help out. Most code implementing these behaviors is in the `experimenter` module of the [pereggrn package](https://github.com/ekernf01/pereggrn). Use `pereggrn.experimenter.get_default_metadata()` to see the default values of each metadata field. Use `pereggrn.experimenter.get_required_keys()` to see which keys are required. Use `pereggrn.experimenter.get_optional_keys()` to see optional keys.
@@ -105,6 +104,10 @@ Here is an annotated layout of output files and folders produced for each Experi
 │   ├── ...
 ├── embeddings # This is only generated for timeseries experiments. It displays train, test, and predicted data all projected onto the same 2D embedding. 
 │   ├── 0 
+├── predictions_screen # Expression predictions for perturbations of all genes tested in a CRISPR screen or similar. These files are generated if and only if there is a `screen.csv` included with the perturbation dataset you selected.
+│   ├── 0.h5ad 
+│   ├── 1.h5ad
+│   ├── ...
 ├── predictions # Predictions on test data 
 │   ├── 0.h5ad 
 │   ├── 1.h5ad
@@ -127,6 +130,7 @@ Here is a description of the columns of `evaluationPerPert.parquet` and `evaluat
     - `mae` is mean absolute error. 
     - `mse` is mean squared error. 
     - `mse_top_n` is the mean squared error on the n genes with highest test-set fold change. 
+    - `correlation_top_n` is the correlation between predicted and observed log fold change, computed on the n genes with highest test-set fold change. 
     - `overlap_top_n` number of genes present in the top n genes when ranked by either predicted or observed absolute log fold change. 
     - `proportion_correct_direction` is the proportion of genes going up (if they were predicted to go up) or down (if they were predicted to go down) or staying the same (if they were predicted to stay the same). `pvalue_effect_direction` is a p-value from a chi-squared test of a 3x3 table of up, down, unchanged for observed and predicted expression. 
     - `spearman`  is the Spearman correlation between the predicted log fold change and the observed log fold change, and `spearmanp` is the corresponding p-value. 
@@ -134,7 +138,7 @@ Here is a description of the columns of `evaluationPerPert.parquet` and `evaluat
     - `standard_deviation` measures not accuracy but rather how close the predictions are to just being constant. Many of these are only available per-pert or per-target and not both. 
     - `mae_baseline` and `mae_benefit` were for comparing each condition to a baseline but are now deprecated. 
     - `distance_in_pca` measures the (Euclidean) distance between observed and predicted gene expression in a PCA substance. 
-    - `fc_targets_vs_non_targets` separates targets (any gene predicted to change) from non-targets (any gene predicted to remain the same), and computes the difference in log fold changes between these groups of genes. This is tested via ANOVA, with results in `pvalue_targets_vs_non_targets`.
+    - `fc_targets_vs_non_targets` separates targets (any gene with nonzero predicted log fold change) from non-targets (any gene predicted to remain the same), and computes the difference in observed log fold changes between these groups of genes. This is tested via ANOVA, with results in `pvalue_targets_vs_non_targets`.
     - New user-added evaluation metrics will appear next to these; see `how_to.md` for more information. 
 - Experimental conditions merged from `conditions.csv`: 
     - These include: `perturbation condition unique_id nickname question data_split_seed type_of_split regression_method num_genes eligible_regulators is_active facet_by color_by factor_varied merge_replicates perturbation_dataset network_datasets allowed_regulators_vs_network_regulators refers_to pruning_parameter pruning_strategy network_prior desired_heldout_fraction starting_expression feature_extraction control_subtype predict_self low_dimensional_structure low_dimensional_training matching_method prediction_timescale baseline_condition visualization_embedding species`. 

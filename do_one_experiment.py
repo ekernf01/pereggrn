@@ -59,7 +59,7 @@ pereggrn_perturbations.set_data_path(
 # Default args to this script for interactive use
 if args.experiment_name is None:
     args = Namespace(**{
-        "experiment_name": "1.5.1_0",
+        "experiment_name": "1.2.2_14",
         "amount_to_do": "missing_models",
         "save_trainset_predictions": False,
         "output": "experiments",
@@ -83,7 +83,7 @@ except FileNotFoundError:
     raise FileNotFoundError(f"Could not find the TF list for {metadata['species']} at {tf_list_path}. Please check the species name (in metadata.json) and the accessory data location (the --tf arg to the pereggrn command line tool).")
 
 # Set up the perturbation and network data
-perturbed_expression_data, networks, conditions, timeseries_expression_data = experimenter.set_up_data_networks_conditions(
+perturbed_expression_data, networks, conditions, timeseries_expression_data, screen = experimenter.set_up_data_networks_conditions(
     metadata,
     amount_to_do = args.amount_to_do, 
     outputs = outputs,
@@ -114,6 +114,7 @@ for i in conditions.index:
     models          = os.path.join( outputs, "models",        str(i) )
     h5ad            = os.path.join( outputs, "predictions",   str(i) + ".h5ad" )
     h5ad_fitted     = os.path.join( outputs, "fitted_values", str(i) + ".h5ad" )
+    h5ad_screen     = os.path.join( outputs, "predictions_screen", str(i) + ".h5ad" )
     train_time_file = os.path.join( outputs, "train_resources", f"{i}.csv")
     train_mem_file = os.path.join( outputs, "train_memory_requirements", f"{i}.bin")
     if args.amount_to_do in {"models", "missing_models"}:
@@ -174,96 +175,21 @@ for i in conditions.index:
             for c in ["timepoint", "cell_type"]:
                 if c not in perturbed_expression_data_heldout_i.obs.columns or c not in perturbed_expression_data_train_i.obs.columns:
                     perturbed_expression_data_heldout_i.obs[c] = 0
-                    perturbed_expression_data_train_i.obs[c] = 0
-
-            # Different defaults for timeseries versus non-timeseries benchmarks. 
-            # For timeseries, predict each combo of cell type, timepoint, and perturbation ONCE. No dupes. Use the average expression_level_after_perturbation. 
-            # For non-timeseries, predict one value per test datapoint. There may be dupes. 
-            # Predictions metadata will be in a dataframe or in the .obs of an AnnData; see docs for grn.predict().
-            predictions       = None
-            predictions_train = None
-            all_except_elap = ['timepoint', 'cell_type', 'perturbation', 'is_control', 'perturbation_type']
-            if conditions.loc[i, "type_of_split"] == "timeseries":
-                predictions_metadata       = perturbed_expression_data_heldout_i.obs[all_except_elap + ["expression_level_after_perturbation"]].groupby(all_except_elap, observed = True).agg({"expression_level_after_perturbation": experimenter.stringy_mean}).reset_index()
-                predictions_train_metadata = perturbed_expression_data_train_i.obs[  all_except_elap + ["expression_level_after_perturbation"]].groupby(all_except_elap, observed = True).agg({"expression_level_after_perturbation": experimenter.stringy_mean}).reset_index()
-                assert conditions.loc[i, "starting_expression"] == "control", "cannot currently reveal test data when doing time-series benchmarks"
-                # "timepoint" in the prediction metadata is the timepoint at which we START the simulation.
-                # We need to arrange it so the simulation also ENDS at a timepoint we can evaluate.
-                # In cases where the simulation is long-term, that's a hard problem. 
-                # Instead of solving lineage tracing on the fly (lolol), we just start from all available cell types.
-                # During evaluation, we will select a subset that "makes sense" to compare to the observed post-perturbation data.
-                predictions_metadata = pd.merge(
-                    predictions_train_metadata[['timepoint', 'cell_type']].drop_duplicates(), 
-                    predictions_metadata[['perturbation', 'is_control', 'perturbation_type', "expression_level_after_perturbation"]],
-                    how = "cross", 
-                )
-                # If there are cell types only present in the test set, try reaching them from any training set cell type. 
-                train_set_cell_types = set(predictions_train_metadata["cell_type"])
-                test_set_cell_types = set(predictions_metadata["cell_type"]) 
-                test_only_cell_types = test_set_cell_types - train_set_cell_types
-                if len(test_only_cell_types) > 0:
-                    print("Cell types in test set but not in training set:", test_only_cell_types)
-                    x = predictions_metadata.query("cell_type in @test_only_cell_types").copy()
-                    predictions_metadata = predictions_metadata.query("cell_type in @train_set_cell_types")
-                    for ct in train_set_cell_types:
-                        x["cell_type"] = ct
-                        predictions_metadata = pd.concat([predictions_metadata, x])
-                assert any(predictions_metadata["is_control"]), "In timeseries experiments, there should be at least one control condition predicted."   
-            else:
-                if conditions.loc[i, "starting_expression"] == "control":
-                    predictions_metadata       = perturbed_expression_data_heldout_i.obs[all_except_elap+["expression_level_after_perturbation"]]
-                    predictions_train_metadata = perturbed_expression_data_train_i.obs[  all_except_elap+["expression_level_after_perturbation"]]
-                elif conditions.loc[i, "starting_expression"] == "heldout":
-                    print("Setting up initial conditions.")
-                    predictions       = perturbed_expression_data_heldout_i.copy()
-                    predictions_train = perturbed_expression_data_train_i.copy()                
-                    predictions_metadata       = None
-                    predictions_train_metadata = None
-                else:
-                    raise ValueError(f"Unexpected value of 'starting_expression' in metadata: { conditions.loc[i, 'starting_expression'] }")
-            try:
-                print("Running GRN.predict()...")
-                predictions   = grn.predict(
-                    predictions = predictions,
-                    predictions_metadata = predictions_metadata,
-                    control_subtype = conditions.loc[i, "control_subtype"], 
-                    feature_extraction_requires_raw_data = grn.feature_extraction.startswith("geneformer"),
-                    prediction_timescale = [int(i) for i in conditions.loc[i,"prediction_timescale"].split(",")], 
-                    do_parallel = not args.no_parallel,
-                )
-            except Exception as e: 
-                if args.skip_bad_runs:
-                    print(f"Caught exception {repr(e)} on experiment {i}; skipping.")
-                else:
-                    raise e
-                continue
-            # Output shape should usually match the heldout data in shape.
-            if conditions.loc[i, "type_of_split"] != "timeseries":
-                assert predictions.shape == perturbed_expression_data_heldout_i.shape, f"There should be one prediction for each observation in the test data. Got {predictions.shape[0]}, expected {perturbed_expression_data_heldout_i.shape[0]}."
-
-            # Sometimes AnnData has trouble saving pandas bool columns and sets, and they aren't needed here anyway.
-            try:
-                del predictions.obs["is_control"] # we can reconstruct this later via experimenter.find_controls().
-                del predictions.obs["is_treatment"] 
-                predictions.uns["perturbed_and_measured_genes"]     = list(predictions.uns["perturbed_and_measured_genes"])
-                predictions.uns["perturbed_but_not_measured_genes"] = list(predictions.uns["perturbed_but_not_measured_genes"])
-            except KeyError as e:
-                pass
-            print("Saving predictions...")
-            experimenter.safe_save_adata( predictions, h5ad )
-            del predictions
-            
-            if args.save_trainset_predictions:
-                fitted_values = grn.predict(
-                    predictions_metadata = predictions_train_metadata,
-                    predictions = predictions_train, 
-                    feature_extraction_requires_raw_data = grn.feature_extraction.startswith("geneformer"),
-                    prediction_timescale = [int(t) for t in conditions.loc[i,"prediction_timescale"].split(",")],
-                    do_parallel = not args.no_parallel,
-                )
-                fitted_values.obs.index = perturbed_expression_data_train_i.obs.index.copy()
-                experimenter.safe_save_adata( fitted_values, h5ad_fitted )
-            print("... done.", flush = True)
+                    perturbed_expression_data_train_i.obs[c] = 0            
+            experimenter.make_predictions(
+                perturbed_expression_data_heldout_i,
+                perturbed_expression_data_train_i,
+                screen,
+                conditions,
+                i,
+                grn,
+                skip_bad_runs = args.skip_bad_runs,
+                no_parallel = args.no_parallel,
+                save_trainset_predictions = args.save_trainset_predictions, 
+                h5ad = h5ad,
+                h5ad_fitted = h5ad_fitted,
+                h5ad_screen = h5ad_screen,
+            )
             del grn
             gc.collect()
 

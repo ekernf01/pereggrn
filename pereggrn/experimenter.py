@@ -280,7 +280,7 @@ def do_one_run(
     """Do one run (fit a GRN model and make predictions) as part of this experiment.
 
     Args:
-        conditions (pd.DataFrame): Output of lay_out_runs
+        conditions (pd.DataFrame): Output of lay_out_runs. Describes the different conditions being compared in this Experiment. 
         i (int): A value from the conditions.index
         tfs: A list of TF's. You can pass in None if you never plan to restrict eligible regulators to just TF's.
         Other args: see help(lay_out_runs)
@@ -409,6 +409,10 @@ def set_up_data_networks_conditions(metadata, amount_to_do, outputs):
         perturbed_expression_data.X = perturbed_expression_data.X.toarray()
     except AttributeError: #Matrix is already dense.
         pass
+    try: 
+        screen = pereggrn_perturbations.load_perturbation(metadata["perturbation_dataset"], is_screen=True)
+    except FileNotFoundError:
+        screen = None
     elap = "expression_level_after_perturbation"
     if metadata["merge_replicates"]:
         perturbed_expression_data = averageWithinPerturbation(ad=perturbed_expression_data)
@@ -442,7 +446,7 @@ def set_up_data_networks_conditions(metadata, amount_to_do, outputs):
         pass
     conditions.to_csv( os.path.join(outputs, "conditions.csv") )
     print("... done.")
-    return perturbed_expression_data, networks, conditions, timeseries_expression_data
+    return perturbed_expression_data, networks, conditions, timeseries_expression_data, screen
 
 def doSplitsMatch(
         experiment1: str, 
@@ -898,3 +902,162 @@ def get_subnets(netName:str, subnets:list = [], target_genes = None, do_aggregat
                 new_key = netName + " " + subnet_name
                 networks[new_key] = pereggrn_networks.LightNetwork(netName, [subnet_name])
     return networks
+
+
+def make_predictions(
+        perturbed_expression_data_heldout_i: anndata.AnnData, 
+        perturbed_expression_data_train_i: anndata.AnnData, 
+        screen: pd.DataFrame,
+        conditions: pd.DataFrame,
+        i: int,
+        grn: ggrn.GRN,
+        skip_bad_runs: bool,
+        no_parallel: bool,
+        save_trainset_predictions: bool, 
+        h5ad: str,
+        h5ad_fitted: str,
+        h5ad_screen: str,
+    ):
+    """Make predictions. This calls grn.predict() for the technical work, but spends a lot of lines setting up the right metadata.
+
+    Args:
+        perturbed_expression_data_heldout_i (anndata.AnnData): heldout expression data.
+        perturbed_expression_data_train_i (anndata.AnnData): training expression data.
+        screen (pd.DataFrame): output from a low-dimensional screen or a literature review.
+        conditions (pd.DataFrame): Describes the different conditions being compared in this Experiment. 
+        i (int): which condition is being run right now
+        grn (ggrn.GRN): fitted GRN model from GGRN
+        skip_bad_runs (bool): if we hit an error, handle it and return (if True), or raise an exception (if False).
+        no_parallel (bool): if True, don't use joblib parallelism. Useful for debugging. 
+        save_trainset_predictions (bool): if True, save the predictions on the training set.
+        h5ad (str): file to save predictions to
+        h5ad_fitted (str): file to save fited values (predictions on trainset) to
+        h5ad_screen (str): file to save predictions of screened genes to, if screen is given.
+
+    Returns:
+        Nothing. Effect is to save predictions to disk in h5ad format.
+    """
+    # We use different defaults for timeseries versus non-timeseries benchmarks. 
+    # For timeseries, predict each combo of cell type, timepoint, and perturbation ONCE. No dupes. Use the average expression_level_after_perturbation. 
+    # For non-timeseries, predict one value per test datapoint. There may be dupes. 
+    # Predictions metadata will be in a dataframe or in the .obs of an AnnData; see docs for grn.predict().
+    predictions       = None
+    predictions_train = None
+    all_except_elap = ['timepoint', 'cell_type', 'perturbation', 'is_control', 'perturbation_type']
+    if conditions.loc[i, "type_of_split"] == "timeseries":
+        predictions_metadata       = perturbed_expression_data_heldout_i.obs[all_except_elap + ["expression_level_after_perturbation"]].groupby(all_except_elap, observed = True).agg({"expression_level_after_perturbation": stringy_mean}).reset_index()
+        predictions_train_metadata = perturbed_expression_data_train_i.obs[  all_except_elap + ["expression_level_after_perturbation"]].groupby(all_except_elap, observed = True).agg({"expression_level_after_perturbation": stringy_mean}).reset_index()
+        assert conditions.loc[i, "starting_expression"] == "control", "cannot currently reveal test data when doing time-series benchmarks"
+        # "timepoint" in the prediction metadata is the timepoint at which we START the simulation.
+        # We need to arrange it so the simulation also ENDS at a timepoint we can evaluate.
+        # In cases where the simulation is long-term, that's a hard problem. 
+        # Instead of solving lineage tracing on the fly (lolol), we just start from all available cell types.
+        # During evaluation, we will select a subset that "makes sense" to compare to the observed post-perturbation data.
+        predictions_metadata = pd.merge(
+            predictions_train_metadata[['timepoint', 'cell_type']].drop_duplicates(), 
+            predictions_metadata[['perturbation', 'is_control', 'perturbation_type', "expression_level_after_perturbation"]],
+            how = "cross", 
+        )
+        # If there are cell types only present in the test set, try reaching them from any training set cell type. 
+        train_set_cell_types = set(predictions_train_metadata["cell_type"])
+        test_set_cell_types = set(predictions_metadata["cell_type"]) 
+        test_only_cell_types = test_set_cell_types - train_set_cell_types
+        if len(test_only_cell_types) > 0:
+            print("Cell types in test set but not in training set:", test_only_cell_types)
+            x = predictions_metadata.query("cell_type in @test_only_cell_types").copy()
+            predictions_metadata = predictions_metadata.query("cell_type in @train_set_cell_types")
+            for ct in train_set_cell_types:
+                x["cell_type"] = ct
+                predictions_metadata = pd.concat([predictions_metadata, x])
+        assert any(predictions_metadata["is_control"]), "In timeseries experiments, there should be at least one control condition predicted."   
+    else:
+        if conditions.loc[i, "starting_expression"] == "control":
+            predictions_metadata       = perturbed_expression_data_heldout_i.obs[all_except_elap+["expression_level_after_perturbation"]]
+            predictions_train_metadata = perturbed_expression_data_train_i.obs[  all_except_elap+["expression_level_after_perturbation"]]
+        elif conditions.loc[i, "starting_expression"] == "heldout":
+            print("Setting up initial conditions.")
+            predictions       = perturbed_expression_data_heldout_i.copy()
+            predictions_train = perturbed_expression_data_train_i.copy()                
+            predictions_metadata       = None
+            predictions_train_metadata = None
+        else:
+            raise ValueError(f"Unexpected value of 'starting_expression' in metadata: { conditions.loc[i, 'starting_expression'] }")
+        
+    try:
+        print("Running GRN.predict()...")
+        predictions   = grn.predict(
+            predictions = predictions,
+            predictions_metadata = predictions_metadata,
+            control_subtype = conditions.loc[i, "control_subtype"], 
+            feature_extraction_requires_raw_data = grn.feature_extraction.startswith("geneformer"),
+            prediction_timescale = [int(i) for i in conditions.loc[i,"prediction_timescale"].split(",")], 
+            do_parallel = not no_parallel,
+        )
+    except Exception as e: 
+        if skip_bad_runs:
+            print(f"Caught exception {repr(e)} on experiment {i}; skipping.")
+        else:
+            raise e
+        return
+    # Output shape should usually match the heldout data in shape.
+    if conditions.loc[i, "type_of_split"] != "timeseries":
+        assert predictions.shape == perturbed_expression_data_heldout_i.shape, f"There should be one prediction for each observation in the test data. Got {predictions.shape[0]}, expected {perturbed_expression_data_heldout_i.shape[0]}."
+
+    # Sometimes AnnData has trouble saving pandas bool columns and sets, and they aren't needed here anyway.
+    try:
+        del predictions.obs["is_control"] # we can reconstruct this later via experimenter.find_controls().
+        del predictions.obs["is_treatment"] 
+        predictions.uns["perturbed_and_measured_genes"]     = list(predictions.uns["perturbed_and_measured_genes"])
+        predictions.uns["perturbed_but_not_measured_genes"] = list(predictions.uns["perturbed_but_not_measured_genes"])
+    except KeyError as e:
+        pass
+    print("Saving predictions...")
+    safe_save_adata( predictions, h5ad )
+    del predictions
+    
+    if save_trainset_predictions:
+        fitted_values = grn.predict(
+            predictions_metadata = predictions_train_metadata,
+            predictions = predictions_train, 
+            feature_extraction_requires_raw_data = grn.feature_extraction.startswith("geneformer"),
+            prediction_timescale = [int(t) for t in conditions.loc[i,"prediction_timescale"].split(",")],
+            do_parallel = not no_parallel,
+        )
+        fitted_values.obs.index = perturbed_expression_data_train_i.obs.index.copy()
+        safe_save_adata( fitted_values, h5ad_fitted )
+        del fitted_values
+
+    if screen is not None:
+        # By default, only make predictions for genes that can be regulators in the model.
+        perts_to_screen = screen.copy()
+        perts_to_screen = perts_to_screen.query("perturbation in @grn.eligible_regulators")
+        perts_to_screen["is_control"] = False
+        perts_to_screen = pd.concat([perts_to_screen, pd.DataFrame({"perturbation": ["control"], "is_control": [True]}, index = ["control"])])
+        # Do everything. Knock it down, push it up, every cell type.
+        lowest = perturbed_expression_data_train_i.X.min()
+        highest = perturbed_expression_data_train_i.X.max()
+        perts_to_screen = perts_to_screen.merge( 
+            pd.DataFrame( 
+                { 
+                    'perturbation_type':["knockout", "overexpression"], 
+                    'expression_level_after_perturbation':[lowest, highest] 
+                } 
+            ), 
+            how = "cross",
+        )
+        perts_to_screen = pd.merge(
+            predictions_train_metadata[['timepoint', 'cell_type']].drop_duplicates(), 
+            perts_to_screen[['perturbation', 'is_control', 'perturbation_type', "expression_level_after_perturbation"]],
+            how = "cross", 
+        )
+        screen_predictions = grn.predict(
+            predictions_metadata = perts_to_screen,
+            feature_extraction_requires_raw_data = grn.feature_extraction.startswith("geneformer"),
+            prediction_timescale = [int(t) for t in conditions.loc[i,"prediction_timescale"].split(",")],
+            do_parallel = not no_parallel,
+        )
+        screen_predictions.obs.index = perturbed_expression_data_train_i.obs.index.copy()
+        safe_save_adata( screen_predictions, h5ad_screen )
+        del screen_predictions
+    print("... done.", flush = True)
+    return
