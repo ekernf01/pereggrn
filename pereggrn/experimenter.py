@@ -1056,7 +1056,6 @@ def make_predictions(
             prediction_timescale = [int(t) for t in conditions.loc[i,"prediction_timescale"].split(",")],
             do_parallel = not no_parallel,
         )
-        screen_predictions.obs.index = perturbed_expression_data_train_i.obs.index.copy()
         safe_save_adata( screen_predictions, h5ad_screen )
         del screen_predictions
     print("... done.", flush = True)
