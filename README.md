@@ -4,7 +4,7 @@ This repo contains software that generated our [benchmarking results](https://gi
 
 ### Pronunciation
 
-Like ["peregrine"](https://en.wikipedia.org/wiki/Peregrine_falcon).
+"Peregrine", like the [falcon](https://en.wikipedia.org/wiki/Peregrine_falcon) or the [Took](https://en.wikipedia.org/wiki/Pippin_Took).
 
 ### Usage
 
