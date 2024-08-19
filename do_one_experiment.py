@@ -105,9 +105,10 @@ def get_current_data_split(i, verbose = False):
     )
 
 # Begin conditions
-os.makedirs(os.path.join( outputs, "predictions"   ),   exist_ok=True) 
-os.makedirs(os.path.join( outputs, "fitted_values" ),   exist_ok=True) 
-os.makedirs(os.path.join( outputs, "train_resources" ), exist_ok=True) 
+os.makedirs(os.path.join( outputs, "predictions"   ),     exist_ok=True) 
+os.makedirs(os.path.join( outputs, "predictions_screen"), exist_ok=True) 
+os.makedirs(os.path.join( outputs, "fitted_values" ),     exist_ok=True) 
+os.makedirs(os.path.join( outputs, "train_resources" ),   exist_ok=True) 
 os.makedirs(os.path.join( outputs, "train_memory_requirements" ),    exist_ok=True) 
 
 for i in conditions.index:
