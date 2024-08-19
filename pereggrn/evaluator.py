@@ -5,10 +5,9 @@ from joblib.parallel import parallel_config
 import numpy as np
 import pandas as pd
 import anndata
-from scipy.stats import spearmanr as spearmanr
+from scipy.stats import spearmanr, pearsonr
 from scipy.stats import rankdata as rank
 import os 
-import re
 import altair as alt
 import pereggrn.experimenter as experimenter
 from  scipy.stats import chi2_contingency
@@ -79,6 +78,7 @@ def fc_targets_vs_non_targets( predicted, observed, baseline_predicted, baseline
 
 METRICS = {
     "spearman":                     lambda predicted, observed, baseline_predicted, baseline_observed: [x for x in spearmanr(observed - baseline_observed,   predicted - baseline_predicted)][0],
+    "pearson":                      lambda predicted, observed, baseline_predicted, baseline_observed: [x for x in pearsonr(observed - baseline_observed,   predicted - baseline_predicted)][0],
     "mae":                          lambda predicted, observed, baseline_predicted, baseline_observed: np.abs               (observed - baseline_observed - (predicted - baseline_predicted)).mean(),
     "mse":                          lambda predicted, observed, baseline_predicted, baseline_observed: np.linalg.norm       (observed - baseline_observed - (predicted - baseline_predicted))**2,
     "mse_top_20":                   lambda predicted, observed, baseline_predicted, baseline_observed: mse_top_n(predicted, observed, baseline_predicted, baseline_observed, n=20),
@@ -87,6 +87,9 @@ METRICS = {
     "overlap_top_20":               lambda predicted, observed, baseline_predicted, baseline_observed: overlap_top_n(predicted, observed, baseline_predicted, baseline_observed, n=20),
     "overlap_top_100":              lambda predicted, observed, baseline_predicted, baseline_observed: overlap_top_n(predicted, observed, baseline_predicted, baseline_observed, n=100),
     "overlap_top_200":              lambda predicted, observed, baseline_predicted, baseline_observed: overlap_top_n(predicted, observed, baseline_predicted, baseline_observed, n=200),
+    "pearson_top_20":               lambda predicted, observed, baseline_predicted, baseline_observed: pearson_top_n(predicted, observed, baseline_predicted, baseline_observed, n=20),
+    "pearson_top_100":              lambda predicted, observed, baseline_predicted, baseline_observed: pearson_top_n(predicted, observed, baseline_predicted, baseline_observed, n=100),
+    "pearson_top_200":              lambda predicted, observed, baseline_predicted, baseline_observed: pearson_top_n(predicted, observed, baseline_predicted, baseline_observed, n=200),
     "proportion_correct_direction": lambda predicted, observed, baseline_predicted, baseline_observed: np.mean(np.sign(observed - baseline_observed) == np.sign(predicted - baseline_predicted)),
     "pvalue_effect_direction":      lambda predicted, observed, baseline_predicted, baseline_observed: chi2_contingency(
         observed = pd.crosstab(
@@ -98,10 +101,17 @@ METRICS = {
     "fc_targets_vs_non_targets": fc_targets_vs_non_targets,
 }
 
+def pearson_top_n(predicted, observed, baseline_predicted, baseline_observed, n):
+    top_n = rank(-np.abs(observed - baseline_observed)) <= n
+    try: 
+        return pearsonr((observed - baseline_observed)[top_n], (predicted - baseline_predicted)[top_n])[0]
+    except:
+        return 0
+
 def overlap_top_n(predicted, observed, baseline_predicted, baseline_observed, n):
     top_n_observed  = rank(-np.abs( observed -  baseline_observed)) <= n
     top_n_predicted = rank(-np.abs(predicted - baseline_predicted)) <= n
-    return np.sum(top_n_observed*top_n_predicted)
+    return np.sum(top_n_observed*top_n_predicted)/n
 
 def mse_top_n(predicted, observed, baseline_predicted, baseline_observed, n):
     top_n = rank(-np.abs(observed - baseline_observed)) <= n
