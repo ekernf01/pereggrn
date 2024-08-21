@@ -792,7 +792,7 @@ def evaluate_across_perts(
         expression.obs[elap] = pd.to_numeric(expression.obs[elap], errors='coerce')
         expression.obs[         "perturbation"] = expression.obs[         "perturbation"].astype(str)
         predictedExpression.obs["perturbation"] = predictedExpression.obs["perturbation"].astype(str)
-        for c in ["timepoint", "perturbation", elap, "cell_type"]:
+        for c in [ "perturbation", elap ]:
             if not all(
                 expression.obs.loc         [:, c].fillna(0) == 
                 predictedExpression.obs.loc[:, c].fillna(0)
@@ -814,7 +814,6 @@ def evaluate_across_perts(
             train_cells = train.obs["cell_type"]==celltype & train.obs["timepoint"]==timepoint
             progenitor[group, :] = train[train.obs[train_cells, "matched_control"], :].X.mean(0)
             baseline_training[group, :] = train[train_cells, :].X.mean(0)
-        breakpoint()
     else:
         viz_2d = None
         progenitor = None
