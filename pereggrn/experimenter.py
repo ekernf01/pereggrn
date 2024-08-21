@@ -85,7 +85,7 @@ def get_default_metadata():
         "matching_method": "steady_state",
         "prediction_timescale": "1",
         "does_simulation_progress": None,
-        "visualization_embedding": "X_pca",
+        "visualization_embedding": None,
         "species": "human",
     }
 
