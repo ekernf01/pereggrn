@@ -277,7 +277,7 @@ def do_one_run(
     tfs: list,
     do_parallel: bool = True
 ) -> anndata.AnnData:
-    """Do one run (fit a GRN model and make predictions) as part of this experiment.
+    """Fit one GRN model and make many predictions as part of this experiment.
 
     Args:
         conditions (pd.DataFrame): Output of lay_out_runs. Describes the different conditions being compared in this Experiment. 
@@ -348,7 +348,7 @@ def do_one_run(
         low_dimensional_structure            = conditions.loc[i,"low_dimensional_structure"],
         low_dimensional_training             = conditions.loc[i,"low_dimensional_training"],
         low_dimensional_value                = conditions.loc[i,"low_dimensional_value"],
-        prediction_timescale                 = conditions.loc[i,"prediction_timescale"],
+        prediction_timescale                 = [int(i) for i in str(conditions.loc[i,"prediction_timescale"]).split(",")],
         do_parallel = do_parallel,
         kwargs                               = kwargs_expanded_or_not,
     )
@@ -990,7 +990,7 @@ def make_predictions(
             predictions_metadata = predictions_metadata,
             control_subtype = conditions.loc[i, "control_subtype"], 
             feature_extraction_requires_raw_data = grn.feature_extraction.startswith("geneformer"),
-            prediction_timescale = [int(i) for i in conditions.loc[i,"prediction_timescale"].split(",")], 
+            prediction_timescale = [int(i) for i in str(conditions.loc[i,"prediction_timescale"]).split(",")], 
             do_parallel = not no_parallel,
         )
     except Exception as e: 

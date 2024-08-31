@@ -998,6 +998,10 @@ def assert_perturbation_metadata_match(
         raise AssertionError("Predicted and observed anndata are different shapes.")
     predicted.obs_names = observed.obs_names
     for c in ["perturbation", "expression_level_after_perturbation"]:
+        # 1 == 1.0 but '1' != '1.0'
+        if c=="expression_level_after_perturbation":
+            predicted.obs[c] = predicted.obs[c].astype(float)
+            observed.obs[c] = observed.obs[c].astype(float)
         if not all(
                 predicted.obs[c].astype(str) == observed.obs[c].astype(str)
             ):
