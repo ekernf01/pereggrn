@@ -23,6 +23,7 @@ parser.add_argument("--save_models",     help="If true, save model objects.", de
 parser.add_argument("--save_trainset_predictions", help="If provided, make & save predictions of training data.", default = False, action = "store_true")
 parser.add_argument("--no_parallel", help="If provided, don't use loky parallelization.", default = False, action = "store_true")
 parser.add_argument('--no_skip_bad_runs', dest='skip_bad_runs', action='store_false', help="Unless this flag is used, keep running when some runs hit errors.")
+parser.add_argument('--do_memory_profiling', dest='do_memory_profiling', action='store_true', help="If this flag is used, use memray for memory profiling.")
 parser.add_argument('--networks', type=str, default='../network_collection/networks', help="Location of our network collection on your hard drive")
 parser.add_argument('--data', type=str, default='../perturbation_data/perturbations', help="Location of our perturbation data on your hard drive")
 parser.add_argument('--tf', type=str, default = "../accessory_data/tf_lists",     help="Location of per-species lists of TFs on your hard drive")
@@ -59,7 +60,7 @@ pereggrn_perturbations.set_data_path(
 # Default args to this script for interactive use
 if args.experiment_name is None:
     args = Namespace(**{
-        "experiment_name": "1.6.1_11",
+        "experiment_name": "1.6.1_3",
         "amount_to_do": "missing_models",
         "save_trainset_predictions": False,
         "output": "experiments",
@@ -137,7 +138,20 @@ for i in conditions.index:
                     os.unlink(train_mem_file)
                 except FileNotFoundError:
                     pass
-                with memray.Tracker(train_mem_file, follow_fork = True, file_format = memray.FileFormat.AGGREGATED_ALLOCATIONS): 
+                if args.do_memory_profiling:
+                    with memray.Tracker(train_mem_file, follow_fork = True, file_format = memray.FileFormat.AGGREGATED_ALLOCATIONS): 
+                        grn = experimenter.do_one_run(
+                            conditions = conditions, 
+                            i = i,
+                            train_data = perturbed_expression_data_train_i, 
+                            test_data  = perturbed_expression_data_heldout_i,
+                            networks = networks, 
+                            outputs = outputs,
+                            metadata = metadata,
+                            tfs = TF_LIST,
+                            do_parallel=(not args.no_parallel),
+                        )
+                else: 
                     grn = experimenter.do_one_run(
                         conditions = conditions, 
                         i = i,
@@ -150,13 +164,13 @@ for i in conditions.index:
                         do_parallel=(not args.no_parallel),
                     )
                 train_time = time.time() - start_time
-                peak_ram = subprocess.run(["memray", "summary", train_mem_file], capture_output=True, text=True).stdout
                 try:
+                    peak_ram = subprocess.run(["memray", "summary", train_mem_file], capture_output=True, text=True).stdout
                     peak_ram = peak_ram.split("\n")
                     peak_ram = [p for p in peak_ram if ("B" in p)][0]
                     peak_ram = peak_ram.split("│")[2].strip()
                 except:
-                    print(f"Memory profiling results are not as expected, but you can find the raw memray output in {train_mem_file} and try to parse it yourself, then save it to {train_time_file}.")
+                    print(f"Memory profiling results are not found or not as expected. If you passed in --do_memory_profiling, you can find the raw memray output in {train_mem_file} and try to parse it yourself, then save it to {train_time_file}.")
                     peak_ram = np.NAN
                 pd.DataFrame({"walltime (seconds)":train_time, "peak RAM": peak_ram}, index = [i]).to_csv(train_time_file)
             except Exception as e: 
