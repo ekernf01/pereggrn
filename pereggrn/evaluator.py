@@ -702,7 +702,9 @@ def evaluate_per_pert(
     """Calculate evaluation metrics for one perturbation. 
 
     Args:
-        pert (str): name(s) of perturbed gene(s)
+        group (str): element of predictions_metadata["group"] indicating a collection of predictions that will be evaluated jointly.
+            This helps us with metrics that would come out differently if computed on average log FC versus per cell log FC.
+            For instance, selecting the top 20 differentially expressed genes is much cleaner when the average is considered, instead of using a different 20 genes for each observed cell. 
         predictions_metadata (pd.DataFrame): metadata for predictions -- perturbation, elap, cell_type, timepoint
         expression (np.matrix): actual expression, log1p-scale. We use a matrix, not an AnnData, for fast parallelism via memory sharing.
         predictedExpression (np.matrix): predicted expression, log1p-scale
@@ -1000,8 +1002,11 @@ def assert_perturbation_metadata_match(
     for c in ["perturbation", "expression_level_after_perturbation"]:
         # 1 == 1.0 but '1' != '1.0'
         if c=="expression_level_after_perturbation":
-            predicted.obs[c] = predicted.obs[c].astype(float)
-            observed.obs[c] = observed.obs[c].astype(float)
+            try:
+                predicted.obs[c] = predicted.obs[c].astype(float)
+                observed.obs[c] = observed.obs[c].astype(float)
+            except ValueError:
+                pass
         if not all(
                 predicted.obs[c].astype(str) == observed.obs[c].astype(str)
             ):
