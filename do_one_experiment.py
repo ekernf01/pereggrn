@@ -239,6 +239,7 @@ if args.amount_to_do in {"models", "missing_models", "evaluations"}:
         do_scatterplots = False,
         do_parallel = not args.no_parallel, 
     )
+    # pyarrow cannot handle int 
     evaluator.convert_to_simple_types(evaluationPerPert, types = [float, str]).to_parquet(   os.path.join(outputs, "evaluationPerPert.parquet"))
     evaluator.convert_to_simple_types(evaluationPerTarget, types = [float, str]).to_parquet( os.path.join(outputs, "evaluationPerTarget.parquet"))
     if fitted_values is not None:
@@ -271,26 +272,9 @@ if args.amount_to_do in {"plots", "models", "missing_models", "evaluations"}:
     evaluationPerPert   = pd.read_parquet(os.path.join(outputs, "evaluationPerPert.parquet"))
     evaluationPerTarget = pd.read_parquet(os.path.join(outputs, "evaluationPerTarget.parquet"))
 
-    print("Plotting main summaries of results.")
-    evaluator.makeMainPlots(
-        evaluationPerPert, 
-        evaluationPerTarget, 
-        outputs = outputs, 
-        factor_varied = metadata["factor_varied"],
-        color_by = metadata["color_by"],
-        facet_by=metadata["facet_by"],
-    )
     try:
         evaluationPerPertTrainset   = pd.read_parquet(os.path.join(outputs, "trainset_performance", "evaluationPerPert.parquet"))
         evaluationPerTargetTrainset = pd.read_parquet(os.path.join(outputs, "trainset_performance", "evaluationPerTarget.parquet"))
-        evaluator.makeMainPlots(
-            evaluationPerPertTrainset, 
-            evaluationPerTargetTrainset, 
-            outputs = os.path.join(outputs, "trainset_performance"), 
-            factor_varied = metadata["factor_varied"],
-            color_by = metadata["color_by"],
-            facet_by = metadata["facet_by"],
-        )
     except FileNotFoundError:
         pass
 else:

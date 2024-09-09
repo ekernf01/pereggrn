@@ -46,7 +46,6 @@ Experiment metadata files are JSON dictionaries with a limited set of keys. Many
     - If "stratified", we put some samples from each perturbation in the training set, and if there is replication, we put some in the test set. 
     - If "custom", we load the test set from the file 'custom_test_sets/<data_split_seed>.json'. It should be formatted as a json list containing names of observations to reserve for the test set. See the how-to for more help doing this.
     - If "timeseries", then we assume the data are already split into separate `train.h5ad` (containing timeseries data) and `test.h5ad` (containing perturb-seq or similar). 
-- `baseline_condition` DEPRECATED. This is a number, most often 0. This experimental condition, which corresponds to the same-numbered h5ad file in the `predictions` output and the same-numbered row in the `conditions.csv` output, is used as a baseline for computing performance improvement over baseline.
 - `network_datasets` describes a GRN using the same names as our network collection. The behavior is complicated because the network collection is hierarchical: individual sources often include tissue-specific subnetworks. The value associated with the `network_datasets` key is a dict. In this dict, keys are network sources. Values are (sub-)dicts controlling which tissue-specific networks are included and whether/how they are aggregated. Each (sub-)dict controls behavior as follows. 
     - To use only certain tissue-specific subnetworks, set `subnets` to a list naming them. To use all, set subnets to an empty list (default).
     - To take the union of the subnetworks, for example to compare the entire CellNet collection to the entire ANANSE collection, set `do_aggregate_subnets` to `true`. To keep subnetworks separate, for example to compare all tissue-specific networks from CellNet, set `do_aggregate_subnets` to `false` (default). These are meant to be used with `"expand":"grid"`, and using non-default options with `"expand":"ladder"` could cause disastrous bugs -- sorry. 
@@ -76,7 +75,7 @@ Experiment metadata files are JSON dictionaries with a limited set of keys. Many
 - You can add standard all GGRN args to the metadata; they are documented in the [ggrn repo](https://github.com/ekernf01/ggrn). The `prediction_timescale` arg should be given as a comma-separated string that can be parsed as ints, e.g. "1,3,5". 
 - `visualization_embedding` refers to a field in the training data's `obsm` that is used to plot train, test, and predictions all on the same coordinate system. To obtain these plots, make sure the provided value is present in the `.obsm` attribute of the training data.
 - There are some metadata fields not yet documented. If this becomes an obstacle to you, file a github issue and we'll try to help out. Most code implementing these behaviors is in the `experimenter` module of the [pereggrn package](https://github.com/ekernf01/pereggrn). Use `pereggrn.experimenter.get_default_metadata()` to see the default values of each metadata field. Use `pereggrn.experimenter.get_required_keys()` to see which keys are required. Use `pereggrn.experimenter.get_optional_keys()` to see optional keys.
-
+- `color_by`, `facet_by`, `baseline_condition`: deprecated; ignored. 
 
 ### Output files
 

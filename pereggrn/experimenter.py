@@ -29,8 +29,6 @@ def get_required_keys():
         "question",
         "is_active",
         "factor_varied",    
-        "color_by",
-        "facet_by",
         "perturbation_dataset",
     )
 
@@ -48,7 +46,9 @@ def get_optional_keys():
         "control_subtype",
         "expand",
         "kwargs_to_expand",
-        "kwargs"
+        "kwargs", 
+        "color_by",
+        "facet_by",
     )
 
 def get_default_metadata():
