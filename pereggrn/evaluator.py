@@ -380,6 +380,18 @@ def plotOneTargetGene(gene: str,
     ).save(os.path.join(outputs, gene + ".svg"))
     return   
 
+
+
+def convert_to_simple_types(df: pd.DataFrame, types = [int, float, str]) -> pd.DataFrame:
+    for c in df.columns:
+        for t in types:
+            try:
+                df[c] = df[c].astype(t)
+                break
+            except:
+                pass
+    return df    
+
 def postprocessEvaluations(evaluations: pd.DataFrame, 
                            conditions: pd.DataFrame)-> pd.DataFrame:
     """Add condition metadata to eval results and fix formatting.
@@ -393,7 +405,7 @@ def postprocessEvaluations(evaluations: pd.DataFrame,
     """
     evaluations   = pd.concat(evaluations)
     evaluations   = evaluations.merge(conditions,   how = "left", right_index = True, left_on = "index")
-    evaluations   = pd.DataFrame(evaluations.reset_index().to_dict()) # This cleans up weird data types
+    evaluations   = convert_to_simple_types(evaluations).reset_index()
     return evaluations
 
 def evaluateCausalModel(
@@ -747,7 +759,6 @@ def evaluate_per_pert(
         results["viz1_train"]      = viz_embedding_train[0]
         results["viz2_train"]      = viz_embedding_train[1]
         results["delay_score"]     = viz_embedding_progenitor.T.dot(viz_embedding_predicted)
-        perturbation_score
     return pd.DataFrame(results, index = [group])
 
 def evaluate_across_perts(
@@ -799,11 +810,17 @@ def evaluate_across_perts(
                 expression.obs.loc         [:, c].fillna(0) == 
                 predictedExpression.obs.loc[:, c].fillna(0)
             ):
-                print("Observed:")
-                print(expression.obs.loc         [:, c].fillna(0).value_counts)
-                print("Predicted:")
-                print(predictedExpression.obs.loc[:, c].fillna(0).value_counts)
-                raise ValueError(f"Expression and predicted expression have mismatched '{c}' metadata in experiment {experiment_name}. Check stdout for summary statistics.")
+                if expression.obs[c].dtype==str or not all(
+                    expression.obs.loc         [:, c].fillna(0) - 
+                    predictedExpression.obs.loc[:, c].fillna(0) <
+                    1e-12
+                ):
+                    mismatches = expression.obs.loc         [:, c].fillna(0) != predictedExpression.obs.loc[:, c].fillna(0)
+                    print("Observed example mismatches:")
+                    print(expression.obs.loc         [mismatches, c].fillna(0).head())
+                    print("Predicted example mismatches:")
+                    print(predictedExpression.obs.loc[mismatches, c].fillna(0).head())
+                    raise ValueError(f"Expression and predicted expression have mismatched '{c}' metadata in experiment {experiment_name}. Check stdout for summary statistics.")
     
     # Prepare additional data needed for visualization
     if viz_2d is not None:

@@ -60,7 +60,7 @@ pereggrn_perturbations.set_data_path(
 # Default args to this script for interactive use
 if args.experiment_name is None:
     args = Namespace(**{
-        "experiment_name": "1.6.1_3",
+        "experiment_name": "1.0_0",
         "amount_to_do": "missing_models",
         "save_trainset_predictions": False,
         "output": "experiments",
@@ -69,6 +69,7 @@ if args.experiment_name is None:
         "save_models": False,
         "skip_bad_runs": False, # Makes debug/traceback easier
         "no_parallel": True, # Makes debug/traceback easier
+        "do_memory_profiling": False,
     })
 # Additional bookkeeping
 print("Running experiment", flush = True)
@@ -238,8 +239,8 @@ if args.amount_to_do in {"models", "missing_models", "evaluations"}:
         do_scatterplots = False,
         do_parallel = not args.no_parallel, 
     )
-    evaluationPerPert.to_parquet(   os.path.join(outputs, "evaluationPerPert.parquet"))
-    evaluationPerTarget.to_parquet( os.path.join(outputs, "evaluationPerTarget.parquet"))
+    evaluator.convert_to_simple_types(evaluationPerPert, types = [float, str]).to_parquet(   os.path.join(outputs, "evaluationPerPert.parquet"))
+    evaluator.convert_to_simple_types(evaluationPerTarget, types = [float, str]).to_parquet( os.path.join(outputs, "evaluationPerTarget.parquet"))
     if fitted_values is not None:
         print("(Re)doing evaluations on (training set predictions)")
         evaluationPerPertTrainset, evaluationPerTargetTrainset = evaluator.evaluateCausalModel(
