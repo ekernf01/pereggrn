@@ -468,8 +468,9 @@ def evaluateCausalModel(
             all_test_data.obs["timepoint"] = 0
         if not "cell_type" in all_test_data[i].obs.columns: 
             all_test_data.obs["cell_type"] = 0
-            
-        for is_timescale_strict in [True, False]:
+        
+        its_values = [True, False] if "timeseries" in conditions["type_of_split"] else [True]
+        for is_timescale_strict in its_values:
             print(f"Evaluating condition {i}, with is_timescale_strict {is_timescale_strict}.")
             evaluations[is_timescale_strict] = dict()
             for prediction_timescale in timescales:
@@ -545,8 +546,8 @@ def evaluateCausalModel(
                 evaluations[is_timescale_strict][prediction_timescale][0]["prediction_timescale"] = prediction_timescale
                 evaluations[is_timescale_strict][prediction_timescale][1]["prediction_timescale"] = prediction_timescale
         print(f"Finished evaluating condition {i}. Concatenating outputs.")
-        evaluationPerPert  [i] = pd.concat([evaluations[is_timescale_strict][t][0] for t in timescales for is_timescale_strict in [True, False]])
-        evaluationPerTarget[i] = pd.concat([evaluations[is_timescale_strict][t][1] for t in timescales for is_timescale_strict in [True, False]])
+        evaluationPerPert  [i] = pd.concat([evaluations[is_timescale_strict][t][0] for t in timescales for is_timescale_strict in its_values])
+        evaluationPerTarget[i] = pd.concat([evaluations[is_timescale_strict][t][1] for t in timescales for is_timescale_strict in its_values])
         assert "prediction_timescale" in evaluationPerPert[i].columns
         assert "prediction_timescale" in evaluationPerTarget[i].columns
         predicted_expression[i] = None
