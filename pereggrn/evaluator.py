@@ -658,6 +658,7 @@ def evaluate_per_pert(
     results = {k:m(predicted, observed, baseline_predicted, baseline_observed) for k,m in METRICS.items()}
     for k in predictions_metadata.columns:
         results[k] = predictions_metadata.loc[i, k].unique()[0]        
+    results["num_observations_in_group"] = i.sum()
     results["cell_type_correct"] = np.nan
     if classifier is not None:
         class_observed  = classifier.predict(np.reshape(observed, (1, -1)))[0]
@@ -687,6 +688,7 @@ def evaluate_across_perts(
     predictedExpression: anndata.AnnData, 
     baseline_predicted: anndata.AnnData, 
     baseline_observed: anndata.AnnData, 
+    train: anndata.AnnData,
     experiment_name: str, 
     classifier = None, 
     pca20 = None,
@@ -695,6 +697,7 @@ def evaluate_across_perts(
     viz_2d = None,
     baseline_training = None,
     progenitor = None,
+    group_by = ['timepoint', 'cell_type', 'perturbation'],
 ) -> pd.DataFrame:
     """Evaluate performance for each perturbation.
 
@@ -702,6 +705,7 @@ def evaluate_across_perts(
         expression (anndata.AnnData): actual expression, log1p-scale
         predictedExpression (anndata.AnnData): predicted expression, log1p-scale
         baseline_predicted, baseline_observed (anndata.AnnData): baseline expression, log1p-scale
+        train (anndata.AnnData): training data
         experiment_name (str): name of the experiment
         classifier (optional): None or sklearn classifier to judge results by cell type label instead of logfc
         pca20 (optional): None or sklearn PCA object to project expression into a lower-dimensional space
@@ -711,12 +715,13 @@ def evaluate_across_perts(
         viz_2d: supervised classifier that predicts 2d embeddings from log-scale expression, trained on the training data 
         baseline_training (np.matrix, optional): average expression of training cells with the same cell type as these predictions and observations. log1p-scale
         progenitor (np.matrix, optional): average expression of progenitors of cells that contributed to baseline_training, log1p-scale
-
+        group_by (list, optional): If many observations have the same values of all these attributes, they will be summarized in one single row of the evaluations.
     Returns:
         pd.DataFrame: _description_
     """
     assert "timepoint" in expression.obs.columns
-    predictedExpression.obs["group"] = (1-predictedExpression.obs.duplicated()).cumsum()
+    predictedExpression.obs["group"] = (1-expression.obs[group_by].duplicated()).cumsum()
+    print(f"Evaluating {predictedExpression.obs['group'].max()} groups based on {group_by}.", flush=True)
     predictedExpression = predictedExpression.to_memory()
 
     # You can't be too careful these days.
@@ -875,6 +880,7 @@ def evaluateOnePrediction(
             viz_2d = viz_2d,
             baseline_training = None,
             progenitor = None,
+            train = train,
         )
     metrics["spearman"] = metrics["spearman"].astype(float)
     hardest = metrics["spearman"].idxmin()
