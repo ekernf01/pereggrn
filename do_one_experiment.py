@@ -33,16 +33,14 @@ parser.add_argument('--input', type=str, default = "experiments",     help="meta
 parser.set_defaults(feature=True)
 parser.add_argument(
     "--amount_to_do",
-    choices = ["plots", "evaluations", "models", "missing_models"],
+    choices = ["evaluations", "models", "missing_models"],
     default = "missing_models",
     help="""
-    The code makes models, evaluations, and plots, in that order. It saves the models and the evaluations. 
-    To do just plots, using saved evaluations and models, specify "plots".
-    To do plots and evaluations using saved models, specify "evaluations".
-    To do everything, specify "models". 
-    If it crashes, specify "missing_models" to keep previous progress. 
+    To redo just evaluations using saved predictions, specify "evaluations".
+    To redo everything, specify "models". 
+    To do predictions whenever they are not yet saved (e.g. pick up an interrupted run), specify "missing_models". 
     To skip certain models (e.g. skip ExtraTrees if low on RAM), manually place 
-    an empty results file like 'touch outputs/results/predictions/3.h5ad'.
+    an empty results file like 'touch experiments/my_experiment/outputs/results/predictions/3.h5ad'.
     """
 )
 args = parser.parse_args()
@@ -240,6 +238,7 @@ if args.amount_to_do in {"models", "missing_models", "evaluations"}:
         do_parallel = not args.no_parallel, 
     )
     # pyarrow cannot handle int 
+    print("Sanitizing evaluation results", flush = True)
     evaluator.convert_to_simple_types(evaluationPerPert, types = [float, str]).to_parquet(   os.path.join(outputs, "evaluationPerPert.parquet"))
     evaluator.convert_to_simple_types(evaluationPerTarget, types = [float, str]).to_parquet( os.path.join(outputs, "evaluationPerTarget.parquet"))
     if fitted_values is not None:
@@ -257,26 +256,6 @@ if args.amount_to_do in {"models", "missing_models", "evaluations"}:
         os.makedirs(os.path.join(outputs, "trainset_performance"), exist_ok=True)
         evaluationPerPertTrainset.to_parquet(   os.path.join(outputs, "trainset_performance", "evaluationPerPert.parquet"))
         evaluationPerTargetTrainset.to_parquet( os.path.join(outputs, "trainset_performance", "evaluationPerTarget.parquet"))
-        
-# Plot the results
-if args.amount_to_do in {"plots", "models", "missing_models", "evaluations"}:
-    print("Retrieving saved predictions", flush = True)
-    conditions = experimenter.load_successful_conditions(outputs)
-    predictions   = {i:sc.read_h5ad( os.path.join(outputs, "predictions",   str(i) + ".h5ad" ) ) for i in conditions.index}
-    try:
-        fitted_values = {i:sc.read_h5ad( os.path.join(outputs, "fitted_values", str(i) + ".h5ad" ) ) for i in conditions.index}
-    except FileNotFoundError:
-        fitted_values = None
-
-    print("Retrieving saved evaluations", flush = True)
-    evaluationPerPert   = pd.read_parquet(os.path.join(outputs, "evaluationPerPert.parquet"))
-    evaluationPerTarget = pd.read_parquet(os.path.join(outputs, "evaluationPerTarget.parquet"))
-
-    try:
-        evaluationPerPertTrainset   = pd.read_parquet(os.path.join(outputs, "trainset_performance", "evaluationPerPert.parquet"))
-        evaluationPerTargetTrainset = pd.read_parquet(os.path.join(outputs, "trainset_performance", "evaluationPerTarget.parquet"))
-    except FileNotFoundError:
-        pass
 else:
     raise ValueError("--amount_to_do must be one of the allowed options (see them on the help page by passing the -h flag).")
 

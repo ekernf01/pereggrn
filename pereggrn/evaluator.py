@@ -766,7 +766,7 @@ def evaluate_across_perts(
     
     # Evals via joblib by default. it go fast.
     if do_parallel:
-        with parallel_config(temp_folder='/tmp', backend='threading'):
+        with parallel_config(temp_folder='/tmp', backend='threading', verbose = 1):
             results = Parallel(n_jobs=cpu_count())(
                 delayed(evaluate_per_pert)(
                     group,
@@ -800,7 +800,7 @@ def evaluate_across_perts(
             ) 
             for group in predictedExpression.obs["group"].unique()
         ]
-
+    print("Finished evaluating all groups. Concatenating.", flush=True)
     results = pd.concat([r for r in results if type(r) == pd.DataFrame])
     return results
 
