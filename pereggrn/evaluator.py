@@ -306,6 +306,8 @@ def convert_to_simple_types(df: pd.DataFrame, types = [int, float, str]) -> pd.D
     for c in df.columns:
         for t in types:
             try:
+                oldtype = df[c].dtype
+                assert all(df[c].astype(t).astype(oldtype)==df[c])
                 df[c] = df[c].astype(t)
                 break
             except:
@@ -335,7 +337,7 @@ def evaluateCausalModel(
     conditions: pd.DataFrame, 
     outputs: str, 
     classifier_labels = None,
-    do_scatterplots = True, 
+    do_scatterplots = False, 
     path_to_accessory_data: str = "../accessory_data",
     do_parallel: bool = True,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
@@ -654,7 +656,7 @@ def evaluate_per_pert(
     i = predictions_metadata["group"]==group
     predicted = safe_squeeze(predictedExpression[i, :].mean(axis=0))
     observed  = safe_squeeze(         expression[i, :].mean(axis=0))
-    assert observed.shape[0] == expression.shape[1], f"For perturbation {pert}, observed and predicted are different shapes."
+    assert observed.shape[0] == expression.shape[1], f"For group {group}, observed and predicted are different shapes."
     results = {k:m(predicted, observed, baseline_predicted, baseline_observed) for k,m in METRICS.items()}
     for k in predictions_metadata.columns:
         results[k] = predictions_metadata.loc[i, k].unique()[0]        
