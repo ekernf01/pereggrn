@@ -360,11 +360,17 @@ def evaluateCausalModel(
     evaluations  = []
     for i in predicted_expression.keys(): #equivalent to: i in conditions.index
         perturbed_expression_data_train_i, perturbed_expression_data_heldout_i = get_current_data_split(i)
-        pca20 = PCA(n_components = 20)
+        pca20 = PCA(
+            n_components = np.min(
+                [
+                    20, perturbed_expression_data_train_i.shape[1], perturbed_expression_data_train_i.shape[0]
+                ]
+            )
+        )
         try:
             pca20.fit(perturbed_expression_data_train_i.X.toarray())
-        except AttributeError:
-            pca20.fit(perturbed_expression_data_train_i.X)        
+        except AttributeError: # data not sparse
+            pca20.fit(perturbed_expression_data_train_i.X)
         embedding = conditions.loc[i, "visualization_embedding"]
         if np.isnan(embedding):
             embedding = None
@@ -386,9 +392,10 @@ def evaluateCausalModel(
             predicted_expression[i].obs["timepoint"] = 0
         if not "cell_type" in predicted_expression[i].obs.columns: 
             predicted_expression[i].obs["cell_type"] = 0
-        if not "timepoint" in all_test_data[i].obs.columns: 
+        
+        if not "timepoint" in all_test_data.obs.columns: 
             all_test_data.obs["timepoint"] = 0
-        if not "cell_type" in all_test_data[i].obs.columns: 
+        if not "cell_type" in all_test_data.obs.columns: 
             all_test_data.obs["cell_type"] = 0
         
         its_values = [True, False] if "timeseries" in conditions["type_of_split"] else [True]
