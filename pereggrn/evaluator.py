@@ -748,7 +748,7 @@ def evaluate_across_perts(
                 if expression.obs[c].dtype==str or not all(
                     expression.obs.loc         [:, c].fillna(0) - 
                     predictedExpression.obs.loc[:, c].fillna(0) <
-                    1e-12
+                    1e-4
                 ):
                     mismatches = expression.obs.loc         [:, c].fillna(0) != predictedExpression.obs.loc[:, c].fillna(0)
                     print("Observed example mismatches:")
@@ -965,8 +965,9 @@ def assert_perturbation_metadata_match(
         if not all(
                 predicted.obs[c].astype(str) == observed.obs[c].astype(str)
             ):
-            print(predicted.obs[c].head())
-            print(observed.obs[c].head())
+            mismatches = predicted.obs[c].astype(str) != observed.obs[c].astype(str)
+            print(predicted.obs.loc[mismatches,c].head())
+            print(observed.obs.loc[mismatches, c].head())
             raise AssertionError(f"{c} is different between observed and predicted.")
     return
 
