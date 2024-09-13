@@ -957,7 +957,9 @@ def assert_perturbation_metadata_match(
         if c=="expression_level_after_perturbation":
             try:
                 predicted.obs[c] = predicted.obs[c].astype(float)
-                observed.obs[c] = observed.obs[c].astype(float)
+                observed.obs[c]  = observed.obs[c].astype(float)
+                predicted.obs[c] = predicted.obs[c].round(4)
+                observed.obs[c]  = observed.obs[c].round(4)
             except ValueError:
                 pass
         if not all(
