@@ -58,7 +58,7 @@ pereggrn_perturbations.set_data_path(
 # Default args to this script for interactive use
 if args.experiment_name is None:
     args = Namespace(**{
-        "experiment_name": "1.0_8",
+        "experiment_name": "1.0_1",
         "amount_to_do": "missing_models",
         "save_trainset_predictions": False,
         "output": "experiments",
@@ -120,6 +120,7 @@ for i in conditions.index:
     train_mem_file = os.path.join( outputs, "train_memory_requirements", f"{i}.bin")
     if args.amount_to_do in {"models", "missing_models"}:
         perturbed_expression_data_train_i, perturbed_expression_data_heldout_i = get_current_data_split(i, verbose = True)
+        
         gc.collect()
         # Fit models!!
         if \
@@ -232,7 +233,7 @@ if args.amount_to_do in {"models", "missing_models", "evaluations"}:
         get_current_data_split = get_current_data_split, 
         predicted_expression =  predictions,
         is_test_set = True,
-        conditions = conditions,
+        conditions = conditions.copy(), # it corrupts it if you pass by reference. rawr.
         outputs = outputs,
         do_scatterplots = False,
         do_parallel = not args.no_parallel, 

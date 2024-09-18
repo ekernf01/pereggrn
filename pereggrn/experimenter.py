@@ -8,7 +8,6 @@ import scipy
 import anndata
 import scanpy as sc
 from itertools import product
-import pereggrn.evaluator as evaluator
 import ggrn.api as ggrn
 import pereggrn_networks
 import pereggrn_perturbations
@@ -99,6 +98,7 @@ def validate_metadata(
     Args:
         experiment_name (str): name of an Experiment (a folder in the experiments folder)
         metadata (dict): Experiment metadata. 
+        input_folder (str): path to the experiments folder. We look for <input_folder>/<experiment_name>/"metadata.json".
 
     Returns:
         OrderedDict: Experiment metadata
@@ -731,7 +731,12 @@ def averageWithinPerturbation(ad: anndata.AnnData, confounders = []):
         confounders: other factors to consider when averaging. For instance, you may want to stratify by cell cycle phase. 
     """
     grouping_variables = ["perturbation", "is_control", "perturbation_type"] + confounders
-    new_obs = ad.obs[grouping_variables + ["expression_level_after_perturbation"]].groupby(grouping_variables, observed = True).agg({"expression_level_after_perturbation": stringy_mean}).reset_index()
+    new_obs = ad.obs[grouping_variables + ["expression_level_after_perturbation", "louvain"]].groupby(
+        grouping_variables, observed = True
+    ).agg({
+        "expression_level_after_perturbation": stringy_mean, 
+        "louvain": lambda x: str(pd.Series(x).mode().values[0])
+        }).reset_index()
     # For backwards compatibility, we keep the perturbation order and the index the same as it was in a previous version of this code.
     original_order = ad.obs["perturbation"].unique()
     original_order = {original_order[i]:i for i in range(len(original_order))}
