@@ -171,7 +171,7 @@ for i in conditions.index:
                     peak_ram = peak_ram.split("│")[2].strip()
                 except:
                     print(f"Memory profiling results are not found or not as expected. If you passed in --do_memory_profiling, you can find the raw memray output in {train_mem_file} and try to parse it yourself, then save it to {train_time_file}.")
-                    peak_ram = np.NAN
+                    peak_ram = np.nan
                 pd.DataFrame({"walltime (seconds)":train_time, "peak RAM": peak_ram}, index = [i]).to_csv(train_time_file)
             except Exception as e: 
                 if args.skip_bad_runs:
