@@ -4,7 +4,7 @@ We hope this documentation makes it easy for you to achieve any of the goals out
 
 ### Prereqs and general procedure
 
-**Warning!** These how-to's assume you have already followed our [installation instructions](https://github.com/ekernf01/perturbation_benchmarking/blob/main/environment/install.md). Otherwise, you will not be able to follow along and test the commands below.
+PEREGGRN depends on other software and on availability of data in a specific format and location. Set up the environment using our [installation instructions](https://github.com/ekernf01/perturbation_benchmarking/blob/main/environment/install.md). Otherwise, you will not be able to follow along and test the commands below.
 
 Once the software is installed, you will almost always need to: 
 
