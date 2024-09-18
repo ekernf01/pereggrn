@@ -1,9 +1,15 @@
 README.md
 do_one_experiment.py
 setup.py
+pereggrn/__init__.py
+pereggrn/evaluator.py
+pereggrn/experimenter.py
 pereggrn.egg-info/PKG-INFO
 pereggrn.egg-info/SOURCES.txt
 pereggrn.egg-info/dependency_links.txt
 pereggrn.egg-info/entry_points.txt
 pereggrn.egg-info/requires.txt
 pereggrn.egg-info/top_level.txt
+tests/test_evaluator.py
+tests/test_experimenter.py
+tests/test_metrics.py

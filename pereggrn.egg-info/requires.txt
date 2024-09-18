@@ -12,3 +12,4 @@ vl-convert-python
 scikit-learn
 pyyaml
 ggrn
+ray[tune]

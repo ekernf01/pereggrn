@@ -5,14 +5,31 @@ Summary: Systematic benchmarking of in silico genetic perturbations
 Home-page: https://github.com/ekernf01/pereggrn
 Author: Eric Kernfeld
 Author-email: eric.kern13@gmail.com
-License: UNKNOWN
-Platform: UNKNOWN
 Requires-Python: >=3.7
 Description-Content-Type: text/markdown
+Requires-Dist: pandas
+Requires-Dist: numpy
+Requires-Dist: anndata
+Requires-Dist: scanpy
+Requires-Dist: memray
+Requires-Dist: pereggrn_perturbations
+Requires-Dist: pereggrn_networks
+Requires-Dist: joblib
+Requires-Dist: scipy
+Requires-Dist: altair
+Requires-Dist: vl-convert-python
+Requires-Dist: scikit-learn
+Requires-Dist: pyyaml
+Requires-Dist: ggrn
+Requires-Dist: ray[tune]
 
 ### PEREGGRN: PErturbation Response Evaluation via a Grammar of Gene Regulatory Networks
 
-This repo contains software that generated our [benchmarking results](https://github.com/ekernf01/perturbation_benchmarking). . 
+This repo contains software that generated our [benchmarking results](https://github.com/ekernf01/perturbation_benchmarking).
+
+### Pronunciation
+
+"Peregrine", like the [falcon](https://en.wikipedia.org/wiki/Peregrine_falcon) or the [Took](https://en.wikipedia.org/wiki/Pippin_Took).
 
 ### Usage
 
@@ -26,13 +43,4 @@ Just this package:
 
 `pip install 'pereggrn @ git+https://github.com/ekernf01/pereggrn.git'`
 
-With our other related packages:
-
-```bash
-for p in pereggn_networks pereggrn_perturbations pereggrn ggrn ggrn_backend2 geneformer_embeddings
-do
-    pip install ${p} @ http://github.com/ekernf01/${p}
-done
-```
-
-
+With data and environment setup: see `docs/how-to.md`. 

@@ -1,4 +1,5 @@
 from setuptools import setup
+from setuptools import find_packages
 
 with open('README.md', 'r', encoding='utf-8') as fh:
 	long_description = fh.read()
@@ -9,10 +10,10 @@ setup(
     description='Systematic benchmarking of in silico genetic perturbations',
     long_description=long_description,
 	long_description_content_type='text/markdown',
-	py_modules=["pereggrn.evaluator.py", "pereggrn.experimenter.py"],
-    scripts=['do_one_experiment.py'],
+    scripts=['do_one_experiment.py'],	
     author='Eric Kernfeld',
     author_email='eric.kern13@gmail.com',
+    packages=find_packages(),
     install_requires=[
         "pandas",
         "numpy",
