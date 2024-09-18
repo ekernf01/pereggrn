@@ -18,11 +18,4 @@ Just this package:
 
 `pip install 'pereggrn @ git+https://github.com/ekernf01/pereggrn.git'`
 
-With our other related packages:
-
-```bash
-for p in pereggn_networks pereggrn_perturbations pereggrn ggrn ggrn_backend2 geneformer_embeddings
-do
-    pip install ${p} @ http://github.com/ekernf01/${p}
-done
-```
+With data and environment setup: see `docs/how-to.md`. 
