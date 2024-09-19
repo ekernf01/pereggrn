@@ -45,6 +45,8 @@ The default behavior of `pereggrn` is optimized for performance, but several slo
 - You can get error tracebacks by not skipping individual bad runs and not using Joblib parallelization. 
 - You can save models for later inspection using `save_models`.
 - If you are afraid of overfitting, you can monitor train and test-set performance separately using `save_trainset_predictions`.
+- If you can't get it to find the perturbation data or the networks, make sure they are downloaded and tell it where they are via `--data` or `--networks`. If you can't get it to find the input or put the output in the right place, use `--input` and `--output`.
+
 
 ### How to repeat our network comparison experiments
 
