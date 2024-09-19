@@ -8,8 +8,8 @@ This repo contains software that generated our [benchmarking results](https://gi
 
 ### Usage
 
-- Tutorial for everyone: [tutorial.md](https://github.com/ekernf01/pereggrn/blob/main/docs/tutorial.md),
-- In-depth recipes for power users: [how_to.md](https://github.com/ekernf01/pereggrn/blob/main/docs/how_to.md),
+- Tutorial for everyone: [tutorial.md](https://github.com/ekernf01/pereggrn/blob/main/docs/tutorial.md)
+- In-depth recipes for power users: [how_to.md](https://github.com/ekernf01/pereggrn/blob/main/docs/how_to.md)
 - Reference manual for masochists: `pereggrn -h` or [reference.md](https://github.com/ekernf01/pereggrn/blob/main/docs/reference.md)
 
 In brief: pereggrn will look for a `metadata.json` that describes what data to load, how to do the train-test split(s), what network(s) to test, how many genes to include, hyperparameter(s) to use, and other information about the experiment. It will load in data and networks, split the data, train models, make predictions, and score the predictions. The main outputs are full expression forecasts, evaluation results, and a small table describing the different conditions included in the experiment.

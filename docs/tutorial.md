@@ -48,7 +48,7 @@ touch perturbation_benchmarking/experiments/tutorial/metadata.json
 open perturbation_benchmarking/experiments/tutorial/metadata.json
 ```
 
-In `metadata.json`, give your experiment a unique id, a nickname, and a longer description (readme). If you have a numbered list of guiding questions, you can refer to that too. Specify a dataset name (we will use `nakatake`), the number of genes to select (we will use 1000), and some methods to compare. For the causal structure, we will use a fully connected network ("dense"). 
+In `metadata.json`, give your experiment a unique id, a nickname, and a longer description (readme). If you have a numbered list of guiding questions, you can refer to that too. Specify a dataset name (we will use `nakatake`), the number of genes to select (we will use 1000), and some methods to compare. For the causal structure, we will use a fully connected network ("dense"). The contents should look like this. 
 
 ```json
 {
@@ -65,10 +65,7 @@ In `metadata.json`, give your experiment a unique id, a nickname, and a longer d
     ],
     "num_genes": 1000,
     "perturbation_dataset": "nakatake",
-    "data_split_seed": 42,
-    "network_datasets": {
-        "empty": {}
-    }
+    "data_split_seed": 42
 }
 ```
 
@@ -96,7 +93,7 @@ In `perturbation_benchmarking/experiments/tutorial`, it should create `outputs`.
 
 #### Plot the results
 
-You can do this however you prefer. We use ggplot2 and a few other common R packages. 
+You can do this however you prefer. We use ggplot2 and a few other common R packages.
 
 ```R
 library("ggplot2")
@@ -104,37 +101,45 @@ library("arrow")
 library("magrittr")
 library("dplyr")
 library("tidyr")
-filepath = paste0("../experiments/tuttorial/outputs/evaluationPerPert.parquet")
+filepath = paste0("~/Downloads/tutorial/outputs/evaluationPerPert.parquet")
 X <- arrow::read_parquet(filepath, as_data_frame = T, mmap = T)
 metrics = c(   
-    "pearson_top_100", 
-    "overlap_top_100",                 
-    "mse_top_100", 
-    "mse", 
-    "mae", 
-    "spearman", 
-    "proportion_correct_direction", 
-    "cell_label_accuracy"
+  "pearson_top_100", 
+  "overlap_top_100",                 
+  "mse_top_100", 
+  "mse", 
+  "mae", 
+  "spearman", 
+  "proportion_correct_direction", 
+  "cell_type_correct"
 )
 metrics_where_bigger_is_better = c(
-    "spearman", "proportion_correct_direction",                 
-    "pearson_top_100", 
-    "overlap_top_100",                 
-    "cell_label_accuracy", 
-    "proportion correct direction",
-    "cell type correct"
+  "spearman", "proportion_correct_direction",                 
+  "pearson_top_100", 
+  "overlap_top_100",                 
+  "proportion correct direction",
+  "cell_type_correct"
 ) 
-X %<>% 
-    mutate(value = value*ifelse(metric %in% metrics_where_bigger_is_better, 1, -1)) %>%
-    mutate(rank_where_lower_is_better = rank(-value))
-X %<>% 
-    tidyr::pivot_longer(cols = all_of(metrics), names_to = "metric")
-ggplot(X) +
-    geom_tile(aes(x = x, y = metric, fill = rank_where_lower_is_better)) + 
-    labs(x = "", y = "", fill = "Rank (lower is better)", color = "Best\nperformer") +
-    scale_fill_viridis_c(direction = -1) %>%
-    group_by(x, facet1, facet2) %>%
-    summarise(across(metrics), mean)
+
+get_percent_improvement_over_mean = function(value, method, baseline_method = "mean"){
+  baseline_performance = value[method==baseline_method]
+  100*(value - baseline_performance) / value
+}
+long_format = X %>% 
+  group_by(regression_method) %>%
+  summarise(across(metrics, mean)) %>%
+  tidyr::pivot_longer(cols = all_of(metrics), names_to = "metric")
+long_format %<>%
+  mutate(value = value*ifelse(metric %in% metrics_where_bigger_is_better, 1, -1)) %>%
+  mutate(percent_improvement_over_mean = get_percent_improvement_over_mean(value, regression_method))
+ggplot(long_format) +
+  geom_tile(aes(x = regression_method, y = metric, fill = percent_improvement_over_mean)) + 
+  labs(x = "", y = "", fill = "Percent improvement over mean") +
+  scale_fill_gradient2(mid = "grey90", low = "blue", high = "yellow") 
 ```
 
-The result should look like the top left of figure S3.
+The result should look like the top left portion of figure S3.
+
+### Next steps
+
+For recipes on how to run specific types of experiments, add your own data, test a new method, and more, we have a [how-to guide](https://github.com/ekernf01/pereggrn/blob/main/docs/how_to.md). For a comprehensive manual, see the [reference](https://github.com/ekernf01/pereggrn/blob/main/docs/reference.md). To collaborate or get help, contact us via email or by filing a Github issue. We'd love to make this resource useful to anyone studying or predicting transcription.

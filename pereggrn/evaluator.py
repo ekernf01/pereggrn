@@ -194,7 +194,7 @@ def addGeneMetadata(
         sep = "\t"
     )
 
-    evolutionary_constraint = evolutionary_constraint.groupby("gene").agg(func = max)
+    evolutionary_constraint = evolutionary_constraint.groupby("gene").agg(func = "max")
     if any(not x in df.columns for x in evolutionary_characteristics):
         df = pd.merge(
             evolutionary_constraint,
