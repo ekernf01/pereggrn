@@ -7,7 +7,11 @@ from argparse import Namespace
 import datetime
 import gc 
 import time 
-import memray
+try:
+    import memray
+    IS_MEMRAY_AVAILABLE = True
+except ImportError:
+    IS_MEMRAY_AVAILABLE = False
 import subprocess
 
 # Access our code
@@ -138,7 +142,9 @@ for i in conditions.index:
                     os.unlink(train_mem_file)
                 except FileNotFoundError:
                     pass
-                if args.do_memory_profiling:
+                if args.do_memory_profiling and not IS_MEMRAY_AVAILABLE:
+                    print("We could not import memray, so we cannot do memory profiling.")
+                if args.do_memory_profiling and IS_MEMRAY_AVAILABLE:
                     with memray.Tracker(train_mem_file, follow_fork = True, file_format = memray.FileFormat.AGGREGATED_ALLOCATIONS): 
                         grn = experimenter.do_one_run(
                             conditions = conditions, 
@@ -170,7 +176,7 @@ for i in conditions.index:
                     peak_ram = [p for p in peak_ram if ("B" in p)][0]
                     peak_ram = peak_ram.split("│")[2].strip()
                 except:
-                    print(f"Memory profiling results are not found or not as expected. If you passed in --do_memory_profiling, you can find the raw memray output in {train_mem_file} and try to parse it yourself, then save it to {train_time_file}.")
+                    print(f"Memory profiling results are not found or not as expected. If you passed in --do_memory_profiling, you may find the raw memray output in {train_mem_file} and try to parse it yourself, then save it to {train_time_file}.")
                     peak_ram = np.nan
                 pd.DataFrame({"walltime (seconds)":train_time, "peak RAM": peak_ram}, index = [i]).to_csv(train_time_file)
             except Exception as e: 
