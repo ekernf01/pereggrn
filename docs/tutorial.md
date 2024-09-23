@@ -123,7 +123,7 @@ metrics_where_bigger_is_better = c(
 
 get_percent_improvement_over_mean = function(value, method, baseline_method = "mean"){
   baseline_performance = value[method==baseline_method]
-  100*(value - baseline_performance) / value
+  100*(value - baseline_performance) / abs(baseline_performance)
 }
 long_format = X %>% 
   group_by(regression_method) %>%
