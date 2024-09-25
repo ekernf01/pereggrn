@@ -731,6 +731,11 @@ def averageWithinPerturbation(ad: anndata.AnnData, confounders = []):
         confounders: other factors to consider when averaging. For instance, you may want to stratify by cell cycle phase. 
     """
     grouping_variables = ["perturbation", "is_control", "perturbation_type"] + confounders
+    if "louvain" not in ad.obs.columns:
+        ad.obs["louvain"] = "0"
+        delete_louvain_later = True
+    else:
+        delete_louvain_later = False
     new_obs = ad.obs[grouping_variables + ["expression_level_after_perturbation", "louvain"]].groupby(
         grouping_variables, observed = True
     ).agg({
@@ -767,6 +772,8 @@ def averageWithinPerturbation(ad: anndata.AnnData, confounders = []):
         new_ad.raw.X[obs_row["temp_int_index"],:] = ad[p_idx,:].raw.X.sum(0)
 
     new_ad.uns = ad.uns.copy()
+    if delete_louvain_later:
+        new_ad.obs = new_ad.obs.drop(columns = ["louvain"])
     assert "is_control" in new_ad.obs.columns
     assert "perturbation" in new_ad.obs.columns
     assert "perturbation_type" in new_ad.obs.columns

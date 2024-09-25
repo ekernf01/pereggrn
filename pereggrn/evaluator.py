@@ -436,8 +436,10 @@ def evaluateCausalModel(
                     baseline_observed  = perturbed_expression_data_train_i[[bool(b) for b in perturbed_expression_data_train_i.obs["is_control"]], :]
                     baseline_predicted = baseline_observed.copy()
 
-                classifier_labels = "cell_type" if (conditions.loc[i, "type_of_split"]=="timeseries") else None # If you pass None, it will look for "louvain" or give up.
                 assert "timepoint" in current_heldout.obs.columns
+                print("Training a classifier.")
+                classifier_labels = "cell_type" if (conditions.loc[i, "type_of_split"]=="timeseries") else None # If you pass None, it will look for "louvain" or give up.
+                c = experimenter.train_classifier(perturbed_expression_data_train_i, target_key = classifier_labels)
                 evaluations[is_timescale_strict][prediction_timescale] = evaluateOnePrediction(
                     expression = current_heldout,
                     predictedExpression = matched_predictions,
@@ -447,7 +449,7 @@ def evaluateCausalModel(
                     outputs = outputs,
                     experiment_name = i,
                     viz_2d = viz_2d,
-                    classifier = experimenter.train_classifier(perturbed_expression_data_train_i, target_key = classifier_labels),
+                    classifier = c,
                     pca20 = pca20,
                     do_parallel=do_parallel,
                     is_timeseries = (conditions.loc[i, "type_of_split"] == "timeseries"),
@@ -875,7 +877,9 @@ def evaluateOnePrediction(
         raise ValueError(f"expression and predictedExpression must have the same indices on experiment {experiment_name}.")
     baseline_predicted = baseline_predicted.X.mean(axis=0).squeeze()
     baseline_observed = baseline_observed.X.mean(axis=0).squeeze()
+    print("Computing metrics for each target gene.", flush=True)
     metrics_per_target = evaluate_across_targets(expression, predictedExpression)
+    print("Computing metrics for each perturbed gene.", flush=True)
     metrics = evaluate_across_perts(
             expression = expression,
             predictedExpression = predictedExpression, 
@@ -897,6 +901,7 @@ def evaluateOnePrediction(
     perturbation_plot_path = os.path.join(outputs, "perturbations", str(experiment_name))
 
     if doPlots:
+        print("Making some example plots.")
         for pert in metrics.index:
             is_hardest = hardest==pert
             is_easiest = easiest==pert
