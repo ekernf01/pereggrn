@@ -142,4 +142,4 @@ The result should look like the top left portion of figure S1.
 
 ### Next steps
 
-For recipes on how to run specific types of experiments, add your own data, test a new method, and more, we have a [how-to guide](https://github.com/ekernf01/pereggrn/blob/main/docs/how_to.md). For a comprehensive manual, see the [reference](https://github.com/ekernf01/pereggrn/blob/main/docs/reference.md). To collaborate or get help, contact us via email or by filing a Github issue. We'd love to make this resource useful to anyone studying or predicting transcription.
+For recipes on how to run specific types of experiments, add your own data, [test a new method](https://github.com/ekernf01/pereggrn/blob/main/docs/how_to.md#how-to-evaluate-a-new-method), and more, we have a [how-to guide](https://github.com/ekernf01/pereggrn/blob/main/docs/how_to.md). For a comprehensive manual, see the [reference](https://github.com/ekernf01/pereggrn/blob/main/docs/reference.md). To collaborate or get help, contact us via email or by filing a Github issue. We'd love to make this resource useful to anyone studying or predicting transcription.
