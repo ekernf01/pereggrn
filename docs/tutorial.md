@@ -48,7 +48,7 @@ touch perturbation_benchmarking/experiments/tutorial/metadata.json
 open perturbation_benchmarking/experiments/tutorial/metadata.json
 ```
 
-In `metadata.json`, give your experiment a unique id, a nickname, and a longer description (readme). If you have a numbered list of guiding questions, you can refer to that too. Specify a dataset name (we will use `nakatake`), the number of genes to select (we will use 1000), and some methods to compare. For the causal structure, we will use a fully connected network ("dense"). The contents should look like this. 
+In `metadata.json`, give your experiment a unique id, a nickname, and a longer description (readme). If you have a numbered list of guiding questions, you can refer to that too. Specify a dataset name (we will use `nakatake`), the number of genes to select (we will use 1000), and some methods to compare. The contents should look like this. 
 
 ```json
 {
