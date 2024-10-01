@@ -146,7 +146,7 @@ The most important argument is that `regression_method` is set to `"regulon"`. F
 ### How to evaluate a new method
 
 - Make a docker image to containerize your new method. We have a [separate guide for this](https://github.com/ekernf01/ggrn/tree/main/ggrn_docker_backend).
-- Follow the general steps given at the top of this file using the [metadata for our docker demo experiment](https://github.com/ekernf01/perturbation_benchmarking/blob/main/experiments/ggrn_docker_backend/metadata.json) as a starting point.
+- Follow the general steps given at the [top of this file](https://github.com/ekernf01/pereggrn/edit/main/docs/how_to.md#prereqs-and-general-procedure) using the [metadata for our docker demo experiment](https://github.com/ekernf01/perturbation_benchmarking/blob/main/experiments/ggrn_docker_backend/metadata.json) as a starting point.
 
 ```json
 {
