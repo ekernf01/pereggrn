@@ -625,7 +625,7 @@ def evaluate_across_targets(expression: anndata.AnnData, predictedExpression: an
     """
     targets = predictedExpression.var.index
     predictedExpression = predictedExpression.to_memory()
-    with parallel_config(temp_folder='/tmp'):
+    with parallel_config(temp_folder='/tmp', verbose = 1):
         results = Parallel(n_jobs=cpu_count()-1)(delayed(evaluate_per_target)(i, target, expression.X, predictedExpression.X) for i,target in enumerate(targets))
     metrics_per_target = pd.DataFrame(results, columns=["target", "standard_deviation", "mae", "mse"]).set_index("target")
     return metrics_per_target
