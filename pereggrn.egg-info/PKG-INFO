@@ -5,23 +5,10 @@ Summary: Systematic benchmarking of in silico genetic perturbations
 Home-page: https://github.com/ekernf01/pereggrn
 Author: Eric Kernfeld
 Author-email: eric.kern13@gmail.com
+License: UNKNOWN
+Platform: UNKNOWN
 Requires-Python: >=3.7
 Description-Content-Type: text/markdown
-Requires-Dist: pandas
-Requires-Dist: numpy
-Requires-Dist: anndata
-Requires-Dist: scanpy
-Requires-Dist: memray
-Requires-Dist: pereggrn_perturbations
-Requires-Dist: pereggrn_networks
-Requires-Dist: joblib
-Requires-Dist: scipy
-Requires-Dist: altair
-Requires-Dist: vl-convert-python
-Requires-Dist: scikit-learn
-Requires-Dist: pyyaml
-Requires-Dist: ggrn
-Requires-Dist: ray[tune]
 
 ### PEREGGRN: PErturbation Response Evaluation via a Grammar of Gene Regulatory Networks
 
@@ -33,7 +20,9 @@ This repo contains software that generated our [benchmarking results](https://gi
 
 ### Usage
 
-Consult `pereggrn -h`, or the [how-to recipes](https://github.com/ekernf01/pereggrn/blob/main/docs/how_to.md), or the [full reference](https://github.com/ekernf01/pereggrn/blob/main/docs/reference.md).
+- Tutorial for everyone: [tutorial.md](https://github.com/ekernf01/pereggrn/blob/main/docs/tutorial.md)
+- In-depth recipes for power users: [how_to.md](https://github.com/ekernf01/pereggrn/blob/main/docs/how_to.md)
+- Reference manual for masochists: `pereggrn -h` or [reference.md](https://github.com/ekernf01/pereggrn/blob/main/docs/reference.md)
 
 In brief: pereggrn will look for a `metadata.json` that describes what data to load, how to do the train-test split(s), what network(s) to test, how many genes to include, hyperparameter(s) to use, and other information about the experiment. It will load in data and networks, split the data, train models, make predictions, and score the predictions. The main outputs are full expression forecasts, evaluation results, and a small table describing the different conditions included in the experiment.
 
@@ -44,3 +33,5 @@ Just this package:
 `pip install 'pereggrn @ git+https://github.com/ekernf01/pereggrn.git'`
 
 With data and environment setup: see `docs/how-to.md`. 
+
+
