@@ -310,6 +310,7 @@ def do_one_run(
         feature_extraction   = conditions.loc[i,"feature_extraction"],
         validate_immediately = True, 
         memoization_folder = os.path.join(outputs, "memoization", str(i)),
+        species =  metadata["species"]
     )
 
     def simplify_type(x):
@@ -334,7 +335,7 @@ def do_one_run(
     else: 
         # Eric is a mess
         raise ValueError(f"metadata['expand'] must be 'grid' or 'ladder'; got {metadata['expand']}")
-
+    
     print("Fitting models.", flush = True)
     grn.fit(
         method                               = conditions.loc[i,"regression_method"], 
