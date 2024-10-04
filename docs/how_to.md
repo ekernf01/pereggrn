@@ -148,26 +148,6 @@ The most important argument is that `regression_method` is set to `"regulon"`. F
 - Make a docker image to containerize your new method. We have a [separate guide for this](https://github.com/ekernf01/ggrn/tree/main/ggrn_docker_backend).
 - Follow the general steps given at the [top of this file](https://github.com/ekernf01/pereggrn/blob/main/docs/how_to.md#prereqs-and-general-procedure) using the [metadata for our docker demo experiment](https://github.com/ekernf01/perturbation_benchmarking/blob/main/experiments/ggrn_docker_backend/metadata.json) as a starting point.
 
-```json
-{
-    "unique_id": "ggrn_docker_backend",
-    "nickname": "ggrn_docker_backend",
-    "readme": "Test of the ggrn backend that runs a user-specified docker container.",
-    "question": "None", 
-    "is_active": true,
-    "factor_varied": "regression_method",  
-    "color_by": null,
-    "facet_by": null,
-    "perturbation_dataset": "nakatake",
-    "kwargs": {
-        "my_sweepy_hyperparameter": [0, 1],
-        "my_constant_hyperparameter": 0
-    },
-    "kwargs_to_expand": ["my_sweepy_hyperparameter"],
-    "regression_method":"docker____ekernf01/ggrn_docker_backend" 
-}
-```
-
 ### How to run a hyperparameter sweep
 
 Follow the general procedure discussed at the top of this file using Experiment `1.1.1_1` (metadata copied below) as an example. The crucial items are `kwargs` and `kwargs_to_expand`; if it is unclear, you can read about them in `docs/reference.md`. You can combine this with the Docker example above. 
