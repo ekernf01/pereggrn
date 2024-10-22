@@ -367,7 +367,7 @@ def filter_genes(expression_quantified: anndata.AnnData, num_genes: int, outputs
     Returns:
         anndata.AnnData: Input data, but maybe with fewer genes. 
     """
-    assert "highly_variable_rank" in set(expression_quantified.var.columns)
+    assert "highly_variable_rank" in set(expression_quantified.var.columns), "Data must contain a column 'highly_variable_rank' in var. Please run the automated data checks."
     if num_genes is None or num_genes=="all" or np.isnan(num_genes):
         return expression_quantified
 
@@ -384,7 +384,7 @@ def filter_genes(expression_quantified: anndata.AnnData, num_genes: int, outputs
             expression_quantified.var["highly_variable_rank"] < num_genes - n_targeted
         )[0]
     except:
-        raise Exception(f"num_genes must act like a number w.r.t. < operator; received {num_genes}.")
+        raise Exception(f"num_genes must be a number; received {num_genes}.")
     
     gene_indices = np.union1d(targeted_genes, variable_genes)
     gene_set = expression_quantified.var.index[gene_indices]
@@ -971,9 +971,10 @@ def make_predictions(
             predictions_metadata[['perturbation', 'is_control', 'perturbation_type', "expression_level_after_perturbation"]],
             how = "cross", 
         )
+        
         # If there are cell types only present in the test set, try reaching them from any training set cell type. 
         train_set_cell_types = set(predictions_train_metadata["cell_type"])
-        test_set_cell_types = set(predictions_metadata["cell_type"]) 
+        test_set_cell_types  = set(predictions_metadata["cell_type"])
         test_only_cell_types = test_set_cell_types - train_set_cell_types
         if len(test_only_cell_types) > 0:
             print("Cell types in test set but not in training set:", test_only_cell_types)

@@ -15,11 +15,9 @@ from scipy.stats import f_oneway
 from sklearn.decomposition import PCA
 from typing import Tuple, Dict, List
 import gc
-import seaborn as sns
-import matplotlib.pyplot as plt
 from sklearn.neighbors import KNeighborsRegressor
+from ggrn.api import match_timeseries
 from sklearn.pipeline import make_pipeline
-from sklearn.feature_selection import SelectKBest
 
 def test_targets_vs_non_targets( predicted, observed, baseline_predicted, baseline_observed ): 
     predicted = np.squeeze(np.array(predicted))
@@ -372,12 +370,14 @@ def evaluateCausalModel(
         except AttributeError: # data not sparse
             pca20.fit(perturbed_expression_data_train_i.X)
         embedding = conditions.loc[i, "visualization_embedding"]
-        if np.isnan(embedding):
+        try:
+            viz_2d = make_pipeline(KNeighborsRegressor(n_neighbors=10))
+            viz_2d.fit(X = perturbed_expression_data_train_i.X, y = perturbed_expression_data_train_i.obsm[embedding][:, 0:2])
+        except Exception as e:
+            print(f"Failed to project into 2d for evaluation with error: \n'''\n {repr(e)}\n'''\n. Try the following embeddings instead?", flush=True)
+            print(perturbed_expression_data_train_i.obsm.keys())
             embedding = None
             viz_2d = None
-        else:
-            viz_2d = make_pipeline(KNeighborsRegressor(n_neighbors=10))
-            viz_2d.fit(X = perturbed_expression_data_train_i.X, y = perturbed_expression_data_train_i.obsm[embedding][:,k])
         all_test_data = perturbed_expression_data_heldout_i if is_test_set else perturbed_expression_data_train_i # sometimes we predict the training data.
         evaluations = {}
         if "prediction_timescale" not in predicted_expression[i].obs.columns:
@@ -386,7 +386,6 @@ def evaluateCausalModel(
         predicted_expression[i] = predicted_expression[i].to_memory(copy = True)
         predicted_expression[i] = predicted_expression[i][pd.notnull(predicted_expression[i].X.sum(1)), :]
         predicted_expression[i] = experimenter.find_controls(predicted_expression[i])    # the is_control metadata is not saved by the prediction software. Instead, I reconstruct it. because I'm dumb.
-        
         # to maintain backwards compatibility, this allows the timepoint and celltype fields to be missing.
         if not "timepoint" in predicted_expression[i].obs.columns: 
             predicted_expression[i].obs["timepoint"] = 0
@@ -419,6 +418,12 @@ def evaluateCausalModel(
                         classifier = experimenter.train_classifier(perturbed_expression_data_train_i, target_key = "cell_type"), 
                         is_timescale_strict=is_timescale_strict,
                     )
+                    if current_heldout.n_obs == 0:
+                        print("Skipping evaluation because no comparable observations were found.")
+                        evaluations[is_timescale_strict][prediction_timescale] = dict()
+                        evaluations[is_timescale_strict][prediction_timescale][0] = pd.DataFrame()
+                        evaluations[is_timescale_strict][prediction_timescale][1] = pd.DataFrame()
+                        continue
                     # The sensible baseline differs between predicted and test data. 
                     # For the test data, it should be a **test-set** control sample from the same timepoint and cell type. 
                     # For the predictions, it should be a **prediction under no perturbations** from the same timepoint and cell type. 
@@ -452,7 +457,6 @@ def evaluateCausalModel(
                     classifier = c,
                     pca20 = pca20,
                     do_parallel=do_parallel,
-                    is_timeseries = (conditions.loc[i, "type_of_split"] == "timeseries"),
                     train = perturbed_expression_data_train_i,
                 )
                 # Add detail on characteristics of each gene that might make it more predictable
@@ -538,8 +542,8 @@ def select_comparable_observed_and_predicted(
     predictions.obs["cell_type"] = predictions.obs["cell_type"].astype("str")
     test_data.obs["timepoint"] = test_data.obs["timepoint"].astype("Int64")
     predictions.obs["takedown_timepoint"] = predictions.obs["takedown_timepoint"].astype(float).round(0).astype("Int64")
-    # Match the timepoint to the observed data ... or not
     if is_timescale_strict:
+        # Match the timepoint to the observed data
         matched_predictions = pd.merge(
             test_data.obs[  [         'timepoint',          "cell_type", 'perturbation', "expression_level_after_perturbation", "observed_index"]], 
             predictions.obs[['takedown_timepoint',          "cell_type", 'perturbation', "expression_level_after_perturbation", "predicted_index"]], 
@@ -548,7 +552,7 @@ def select_comparable_observed_and_predicted(
             how='inner', 
         )
     else:
-        # Select the largest effects from the predictions. 
+        # Select the timepoint with the largest effects from the predictions. 
         predictions.obs["effect_size"] = 0
         for i in predictions.obs.index:
             t,c = predictions.obs.loc[i, ['takedown_timepoint', "cell_type"]]
@@ -557,12 +561,13 @@ def select_comparable_observed_and_predicted(
         largest_effects = predictions[predictions.obs.groupby(['perturbation'])['effect_size'].idxmax(), :]
         matched_predictions = pd.merge(
             test_data.obs      [["cell_type", 'perturbation', "expression_level_after_perturbation", "observed_index"]], 
-            largest_effects.obs[["cell_type", 'perturbation', "expression_level_after_perturbation", "predicted_index"]], 
+            largest_effects.obs[["cell_type", 'perturbation', "expression_level_after_perturbation", "predicted_index", "takedown_timepoint"]], 
             left_on =['perturbation', "expression_level_after_perturbation"],
             right_on=['perturbation', "expression_level_after_perturbation"],
             how='inner', 
         )
 
+    print(f"Selected {matched_predictions.shape[0]} samples where observed and predicted expression are comparable.")
     assert "is_control" in predictions.obs.columns
     assert "is_control" in test_data.obs.columns
     new_index = [str(j) for j in range(matched_predictions.shape[0])]
@@ -570,6 +575,10 @@ def select_comparable_observed_and_predicted(
     predicted = predictions[matched_predictions["predicted_index"], :]
     predicted.obs_names = new_index
     observed.obs_names = new_index
+    print("Summary of predictions that will be tested:", flush=True)  
+    for c in ['takedown_timepoint', 'cell_type', 'is_control', 'perturbation_type']:
+        print(f"    {predicted.obs[c].value_counts().to_csv(sep=' ')}", flush=True, end = "\n    ")
+    print(f"{predicted.obs['perturbation'].unique().shape[0]} unique perturbation(s)", flush=True)
     return observed, predicted
 
 def safe_squeeze(X):
@@ -679,19 +688,19 @@ def evaluate_per_pert(
     if pca20 is not None:
         results["distance_in_pca"] = np.linalg.norm(pca20.transform(observed.reshape(1, -1)) - pca20.transform(predicted.reshape(1, -1)))**2
     if viz_2d is not None:
-        viz_embedding_predicted  = viz_2d.transform(predicted - baseline_predicted + baseline_training)
-        viz_embedding_progenitor = viz_2d.transform(progenitor[group, :])
-        viz_embedding_test       = viz_2d.transform(expression - baseline_observed + baseline_training)
-        viz_embedding_train      = viz_2d.transform(baseline_training[group, :])
-        results["viz1_predicted"]  = viz_embedding_predicted[0]
-        results["viz2_predicted"]  = viz_embedding_predicted[1]
-        results["viz1_progenitor"] = viz_embedding_progenitor[0]
-        results["viz2_progenitor"] = viz_embedding_progenitor[1]
-        results["viz1_test"]       = viz_embedding_test[0]
-        results["viz2_test"]       = viz_embedding_test[1]
-        results["viz1_train"]      = viz_embedding_train[0]
-        results["viz2_train"]      = viz_embedding_train[1]
-        results["delay_score"]     = viz_embedding_progenitor.T.dot(viz_embedding_predicted)
+        viz_embedding_predicted  = viz_2d.predict((predicted - baseline_predicted + baseline_training[group, ]).reshape(1, -1))
+        viz_embedding_progenitor = viz_2d.predict(progenitor[group, :].reshape(1, -1))
+        viz_embedding_test       = viz_2d.predict((observed - baseline_observed + baseline_training[group, ]).reshape(1, -1))
+        viz_embedding_train      = viz_2d.predict(baseline_training[group, :].reshape(1, -1))
+        results["viz1_predicted"]  = viz_embedding_predicted[0,0]
+        results["viz2_predicted"]  = viz_embedding_predicted[0,1]
+        results["viz1_progenitor"] = viz_embedding_progenitor[0,0]
+        results["viz2_progenitor"] = viz_embedding_progenitor[0,1]
+        results["viz1_test"]       = viz_embedding_test[0,0]
+        results["viz2_test"]       = viz_embedding_test[0,1]
+        results["viz1_train"]      = viz_embedding_train[0,0]
+        results["viz2_train"]      = viz_embedding_train[0,1]
+        results["delay_score"]     = viz_embedding_progenitor.dot(viz_embedding_predicted.T)[0,0]
     return pd.DataFrame(results, index = [group])
 
 def evaluate_across_perts(
@@ -731,7 +740,9 @@ def evaluate_across_perts(
         pd.DataFrame: _description_
     """
     assert "timepoint" in expression.obs.columns
-    predictedExpression.obs["group"] = (1-expression.obs[group_by].duplicated()).cumsum()
+    # Thank you to JohnE: https://stackoverflow.com/a/41638343/3371472
+    group_numbers = predictedExpression.obs[group_by].drop_duplicates().reset_index(drop=True).reset_index().rename({"index":"group"}, axis=1)
+    predictedExpression.obs = predictedExpression.obs.merge( group_numbers, on=group_by )
     print(f"Evaluating {predictedExpression.obs['group'].max()} groups based on {group_by}.", flush=True)
     predictedExpression = predictedExpression.to_memory()
 
@@ -767,8 +778,9 @@ def evaluate_across_perts(
             group_metadata = predictedExpression[predictedExpression.obs["group"]==group, :]
             celltype = group_metadata.obs["cell_type"].unique()[0]
             timepoint = group_metadata.obs["timepoint"].unique()[0]
-            train_cells = train.obs["cell_type"]==celltype & train.obs["timepoint"]==timepoint
-            progenitor[group, :] = train[train.obs[train_cells, "matched_control"], :].X.mean(0)
+            train_cells = (train.obs["cell_type"]==celltype) & (train.obs["timepoint"]==timepoint)
+            train = match_timeseries(train,   matching_method="optimal_transport", matched_control_is_integer=False)
+            progenitor[group, :] = train[train.obs.loc[train_cells, "matched_control"], :].X.mean(0)
             baseline_training[group, :] = train[train_cells, :].X.mean(0)
     else:
         viz_2d = None
@@ -828,7 +840,6 @@ def evaluateOnePrediction(
     viz_2d = None,
     do_careful_checks = True, 
     do_parallel: bool = True, 
-    is_timeseries: bool = False,
     train = anndata.AnnData,
 ):
     '''Compare observed against predicted, for expression, fold-change, or cell type.
@@ -854,9 +865,6 @@ def evaluateOnePrediction(
                     do_careful_checks (bool): check gene name and expression level associated with each perturbation.
                         They must match between expression and predictionExpression.
                     do_parallel (bool): use joblib to parallelize the evaluation across perturbations.
-                    is_timeseries (bool): for timeseries data we expect a different shape for observed and predicted. The default behavior is to compare
-                        predictions to test data within each cell type and timepoint, averaging together all test samples. Also to evaluate predictions 
-                        after different numbers of time-steps separately, even if multiple time-steps are returned inside the same AnnData object. 
                     train (AnnData): training data, used to calculate the baseline expression level for each cell type and timepoint.
 
             Returns:
