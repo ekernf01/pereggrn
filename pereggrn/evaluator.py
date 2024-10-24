@@ -328,6 +328,64 @@ def postprocessEvaluations(evaluations: pd.DataFrame,
     evaluations   = convert_to_simple_types(evaluations).reset_index()
     return evaluations
 
+def summarizeGrossEffects(
+        viz_2d, 
+        perturbed_expression_data_train_i: anndata.AnnData,
+        perturbed_expression_data_heldout_i: anndata.AnnData, 
+        predicted_expression: Dict[int, anndata.AnnData], 
+        i: int, 
+        outputs: str):
+    """Project train, test, and predicted data into 2d. Match up predictions with relevant controls and adjacent timepoints to summarize gross effects on differentiation.
+
+    Args:
+        viz_2d: fitted 2d visualization model trained on the training data. Predicts 2d coordinates from expression.
+        perturbed_expression_data_train_i (anndata.AnnData): _description_
+        perturbed_expression_data_heldout_i (anndata.AnnData): _description_
+        predicted_expression (Dict[int, anndata.AnnData]): _description_
+        i (int): index of the condition being evaluated
+        outputs (str): folder where to save the results
+    """
+    # Visualize test data
+    test_data_projection = pd.DataFrame(viz_2d.predict(perturbed_expression_data_heldout_i.X))
+    test_data_projection.index = perturbed_expression_data_heldout_i.obs.index.copy()
+    os.makedirs(os.path.join(outputs, "test_data_projection"), exist_ok=True)
+    test_data_projection.to_csv(os.path.join(outputs, f"test_data_projection/{i}.csv"))
+    
+    # Visualize training data
+    perturbed_expression_data_train_i.obs[["viz1", "viz2"]] = pd.DataFrame(viz_2d.predict(perturbed_expression_data_train_i.X))
+    # Visualize predictions
+    predicted_expression[i].obs[["viz1", "viz2"]] = pd.DataFrame(viz_2d.predict(predicted_expression[i].X))
+
+    # TODO: Match each predicted embedding to:
+    # - A predicted control in the same cell type
+    # - Training data for that cell type
+    # - Training data for related cell types (next/previous states)
+
+    predicted_controls = predicted_expression[i].obs[predicted_expression[i].obs['is_control']][['viz1', 'viz2', 'cell_type', 'perturbation_type', 'prediction_timescale']]
+    predicted_controls = predicted_controls.rename(columns={'viz1': 'control_viz1', 'viz2': 'control_viz2'}).drop_duplicates()
+    merged_df = pd.merge(
+        predicted_expression[i].obs,
+        predicted_controls,
+        on=['cell_type', 'perturbation_type', 'prediction_timescale'],
+        how='left'
+    )
+    observed_controls = perturbed_expression_data_train_i.obs[perturbed_expression_data_train_i.obs['is_control']][['viz1', 'viz2', 'cell_type', 'perturbation_type', 'prediction_timescale']]
+    # TODO: stopped here
+    # train = match_timeseries(train,   matching_method="optimal_transport", matched_control_is_integer=False)
+
+    # progenitor[group, :] = train[train.obs.loc[train_cells, "matched_control"], :].X.mean(0)
+    # baseline_training[group, :] = train[train_cells, :].X.mean(0)
+
+
+    # os.makedirs(os.path.join(outputs, "predictions_projection"), exist_ok=True)
+    # merged_df.obs[
+    #     ['viz1', 'viz2', 'cell_type', 'perturbation_type', 'prediction_timescale', 'control_viz1', 'control_viz2']
+    # ].to_csv(os.path.join(outputs, f"predictions_projection/{i}.csv"))
+    #     ["delay_score"]     = viz_embedding_progenitor.dot(viz_embedding_predicted.T)[0,0]
+
+    return
+
+
 def evaluateCausalModel(
     get_current_data_split:callable, 
     predicted_expression: dict,
@@ -373,6 +431,7 @@ def evaluateCausalModel(
         try:
             viz_2d = make_pipeline(KNeighborsRegressor(n_neighbors=10))
             viz_2d.fit(X = perturbed_expression_data_train_i.X, y = perturbed_expression_data_train_i.obsm[embedding][:, 0:2])
+            summarizeGrossEffects(viz_2d, perturbed_expression_data_train_i, perturbed_expression_data_heldout_i, predicted_expression, i, outputs)
         except Exception as e:
             print(f"Failed to project into 2d for evaluation with error: \n'''\n {repr(e)}\n'''\n. Try the following embeddings instead?", flush=True)
             print(perturbed_expression_data_train_i.obsm.keys())
@@ -397,96 +456,89 @@ def evaluateCausalModel(
         if not "cell_type" in all_test_data.obs.columns: 
             all_test_data.obs["cell_type"] = 0
         
-        its_values = [True, False] if "timeseries" in conditions["type_of_split"] else [True]
-        for is_timescale_strict in its_values:
-            print(f"Evaluating condition {i}, with is_timescale_strict {is_timescale_strict}.")
-            evaluations[is_timescale_strict] = dict()
-            for prediction_timescale in timescales:
-                print(f"    Timescale selected: {prediction_timescale}.")
-                predicted_expression_it = predicted_expression[i]
-                predicted_expression_it = predicted_expression_it[predicted_expression_it.obs["prediction_timescale"]==prediction_timescale, :]
-                if conditions.loc[i, "type_of_split"] == "timeseries":
-                    assert any(predicted_expression[i].obs["is_control"]), f"No controls found among predictions when evaluating condition {i}."
-                    # For timeseries-versus-perturbseq splits, baseline and observed-to-predicted matching are more complicated. See `docs/timeseries_prediction.md` for details.
-                    # this returns anndatas in the order OBSERVED, PREDICTED
-                    current_heldout, matched_predictions = select_comparable_observed_and_predicted(
-                        conditions = conditions,
-                        predictions = predicted_expression_it, 
-                        perturbed_expression_data_heldout_i = all_test_data, 
-                        i = i,
-                        # I don't care if this is somewhat redundant with the classifier used below. We need both even if not elegant.
-                        classifier = experimenter.train_classifier(perturbed_expression_data_train_i, target_key = "cell_type"), 
-                        is_timescale_strict=is_timescale_strict,
-                    )
-                    if current_heldout.n_obs == 0:
-                        print("Skipping evaluation because no comparable observations were found.")
-                        evaluations[is_timescale_strict][prediction_timescale] = dict()
-                        evaluations[is_timescale_strict][prediction_timescale][0] = pd.DataFrame()
-                        evaluations[is_timescale_strict][prediction_timescale][1] = pd.DataFrame()
-                        continue
-                    # The sensible baseline differs between predicted and test data. 
-                    # For the test data, it should be a **test-set** control sample from the same timepoint and cell type. 
-                    # For the predictions, it should be a **prediction under no perturbations** from the same timepoint and cell type. 
-                    # Because the upstream code selects perturbations to predict from the test set, the names of the controls should match the heldout data.
-                    assert any(current_heldout.obs["is_control"]), f"No controls found among heldout data when evaluating condition {i}, timescale {prediction_timescale}."
-                    assert any(matched_predictions.obs["is_control"]), f"No controls found among predictions when evaluating condition {i}, timescale {prediction_timescale}."
-                    baseline_observed = current_heldout.copy()[current_heldout.obs["is_control"], :]
-                    baseline_predicted = matched_predictions[ matched_predictions.obs["is_control"], : ].copy()
-                else:
-                    current_heldout = all_test_data
-                    matched_predictions = predicted_expression_it
-                    # For train-test splits of a single perturbset, the controls are all in the training data. 
-                    # The same baseline can be used for the training and test data, and it needs to be extracted from the training data. 
-                    assert any(perturbed_expression_data_train_i.obs["is_control"]), "No controls found."
-                    baseline_observed  = perturbed_expression_data_train_i[[bool(b) for b in perturbed_expression_data_train_i.obs["is_control"]], :]
-                    baseline_predicted = baseline_observed.copy()
+        print(f"Evaluating condition {i}")
+        evaluations = dict()
+        for prediction_timescale in timescales:
+            print(f"    Timescale selected: {prediction_timescale}.")
+            predicted_expression_it = predicted_expression[i]
+            predicted_expression_it = predicted_expression_it[predicted_expression_it.obs["prediction_timescale"]==prediction_timescale, :]
+            if conditions.loc[i, "type_of_split"] == "timeseries":
+                assert any(predicted_expression[i].obs["is_control"]), f"No controls found among predictions when evaluating condition {i}."
+                # For timeseries-versus-perturbseq splits, baseline and observed-to-predicted matching are more complicated. See `docs/timeseries_prediction.md` for details.
+                # this returns anndatas in the order OBSERVED, PREDICTED
+                current_heldout, matched_predictions = select_comparable_observed_and_predicted(
+                    conditions = conditions,
+                    predictions = predicted_expression_it, 
+                    perturbed_expression_data_heldout_i = all_test_data, 
+                    i = i,
+                    # I don't care if this is somewhat redundant with the classifier used below. We need both even if not elegant.
+                    classifier = experimenter.train_classifier(perturbed_expression_data_train_i, target_key = "cell_type"), 
+                )
+                if current_heldout.n_obs == 0:
+                    print("Skipping evaluation because no comparable observations were found.")
+                    evaluations[prediction_timescale] = dict()
+                    evaluations[prediction_timescale][0] = pd.DataFrame()
+                    evaluations[prediction_timescale][1] = pd.DataFrame()
+                    continue
+                # The sensible baseline differs between predicted and test data. 
+                # For the test data, it should be a **test-set** control sample from the same timepoint and cell type. 
+                # For the predictions, it should be a **prediction under no perturbations** from the same timepoint and cell type. 
+                # Because the upstream code selects perturbations to predict from the test set, the names of the controls should match the heldout data.
+                assert any(current_heldout.obs["is_control"]), f"No controls found among heldout data when evaluating condition {i}, timescale {prediction_timescale}."
+                assert any(matched_predictions.obs["is_control"]), f"No controls found among predictions when evaluating condition {i}, timescale {prediction_timescale}."
+                baseline_observed = current_heldout.copy()[current_heldout.obs["is_control"], :]
+                baseline_predicted = matched_predictions[ matched_predictions.obs["is_control"], : ].copy()
+            else:
+                current_heldout = all_test_data
+                matched_predictions = predicted_expression_it
+                # For train-test splits of a single perturbset, the controls are all in the training data. 
+                # The same baseline can be used for the training and test data, and it needs to be extracted from the training data. 
+                assert any(perturbed_expression_data_train_i.obs["is_control"]), "No controls found."
+                baseline_observed  = perturbed_expression_data_train_i[[bool(b) for b in perturbed_expression_data_train_i.obs["is_control"]], :]
+                baseline_predicted = baseline_observed.copy()
 
-                assert "timepoint" in current_heldout.obs.columns
-                print("Training a classifier.")
-                classifier_labels = "cell_type" if (conditions.loc[i, "type_of_split"]=="timeseries") else None # If you pass None, it will look for "louvain" or give up.
-                c = experimenter.train_classifier(perturbed_expression_data_train_i, target_key = classifier_labels)
-                evaluations[is_timescale_strict][prediction_timescale] = evaluateOnePrediction(
-                    expression = current_heldout,
-                    predictedExpression = matched_predictions,
-                    baseline_observed = baseline_observed,
-                    baseline_predicted = baseline_predicted,
-                    doPlots=do_scatterplots,
-                    outputs = outputs,
-                    experiment_name = i,
-                    viz_2d = viz_2d,
-                    classifier = c,
-                    pca20 = pca20,
-                    do_parallel=do_parallel,
-                    train = perturbed_expression_data_train_i,
-                )
-                # Add detail on characteristics of each gene that might make it more predictable
-                evaluations[is_timescale_strict][prediction_timescale][0], _ = addGeneMetadata(
-                    evaluations[is_timescale_strict][prediction_timescale][0],
-                    genes_considered_as="perturbations",
-                    adata=perturbed_expression_data_train_i,
-                    adata_test=current_heldout, 
-                    path_to_accessory_data=path_to_accessory_data
-                )
-                evaluations[is_timescale_strict][prediction_timescale][1], _ = addGeneMetadata(
-                    evaluations[is_timescale_strict][prediction_timescale][1],
-                    genes_considered_as="targets",
-                    adata=perturbed_expression_data_train_i,
-                    adata_test=current_heldout,
-                    path_to_accessory_data=path_to_accessory_data
-                )
-                evaluations[is_timescale_strict][prediction_timescale][0]["is_timescale_strict"] = is_timescale_strict
-                evaluations[is_timescale_strict][prediction_timescale][1]["is_timescale_strict"] = is_timescale_strict
-                evaluations[is_timescale_strict][prediction_timescale][0]["index"] = i
-                evaluations[is_timescale_strict][prediction_timescale][1]["index"] = i
-                evaluations[is_timescale_strict][prediction_timescale][0]["prediction_timescale"] = prediction_timescale
-                evaluations[is_timescale_strict][prediction_timescale][1]["prediction_timescale"] = prediction_timescale
-        print(f"Finished evaluating condition {i}. Concatenating outputs.")
-        evaluationPerPert  [i] = pd.concat([evaluations[is_timescale_strict][t][0] for t in timescales for is_timescale_strict in its_values])
-        evaluationPerTarget[i] = pd.concat([evaluations[is_timescale_strict][t][1] for t in timescales for is_timescale_strict in its_values])
-        assert "prediction_timescale" in evaluationPerPert[i].columns
-        assert "prediction_timescale" in evaluationPerTarget[i].columns
-        predicted_expression[i] = None
-        gc.collect()
+            assert "timepoint" in current_heldout.obs.columns
+            print("Training a classifier.")
+            classifier_labels = "cell_type" if (conditions.loc[i, "type_of_split"]=="timeseries") else None # If you pass None, it will look for "louvain" or give up.
+            c = experimenter.train_classifier(perturbed_expression_data_train_i, target_key = classifier_labels)
+            evaluations[prediction_timescale] = evaluateOnePrediction(
+                expression = current_heldout,
+                predictedExpression = matched_predictions,
+                baseline_observed = baseline_observed,
+                baseline_predicted = baseline_predicted,
+                doPlots=do_scatterplots,
+                outputs = outputs,
+                experiment_name = i,
+                classifier = c,
+                pca20 = pca20,
+                do_parallel=do_parallel,
+            )
+            # Add detail on characteristics of each gene that might make it more predictable
+            evaluations[prediction_timescale][0], _ = addGeneMetadata(
+                evaluations[prediction_timescale][0],
+                genes_considered_as="perturbations",
+                adata=perturbed_expression_data_train_i,
+                adata_test=current_heldout, 
+                path_to_accessory_data=path_to_accessory_data
+            )
+            evaluations[prediction_timescale][1], _ = addGeneMetadata(
+                evaluations[prediction_timescale][1],
+                genes_considered_as="targets",
+                adata=perturbed_expression_data_train_i,
+                adata_test=current_heldout,
+                path_to_accessory_data=path_to_accessory_data
+            )
+            evaluations[prediction_timescale][0]["index"] = i
+            evaluations[prediction_timescale][1]["index"] = i
+            evaluations[prediction_timescale][0]["prediction_timescale"] = prediction_timescale
+            evaluations[prediction_timescale][1]["prediction_timescale"] = prediction_timescale
+    print(f"Finished evaluating condition {i}. Concatenating outputs.")
+    evaluationPerPert  [i] = pd.concat([evaluations[t][0] for t in timescales])
+    evaluationPerTarget[i] = pd.concat([evaluations[t][1] for t in timescales])
+    assert "prediction_timescale" in evaluationPerPert[i].columns
+    assert "prediction_timescale" in evaluationPerTarget[i].columns
+    predicted_expression[i] = None
+    gc.collect()
     # Concatenate and add some extra info
     # postprocessEvaluations wants a list of datafrmaes with one dataframe per row in conditions
     try: 
@@ -505,7 +557,6 @@ def select_comparable_observed_and_predicted(
     perturbed_expression_data_heldout_i: anndata.AnnData, 
     i: int, 
     classifier,
-    is_timescale_strict: bool
 ) -> Tuple[anndata.AnnData, anndata.AnnData]:
     """Select a set of predictions that are comparable to the test data, and aggregate the test data within each combination of
     perturbed gene, timepoint, and cell_type. See docs/timeseries_prediction.md for details.
@@ -518,8 +569,6 @@ def select_comparable_observed_and_predicted(
         i (int): which condition you are currently preparing to evaluate
         classifier: for methods like PRESCIENT where the simulation can last a long time, we may need to update the "cell_type" labels to something different from the initial state. 
             This should be an sklearn classifier with a .predict() method. It should accept all genes as features.
-        is_timescale_strict: if true, make sure the takedown timepoint is equal between the observed and predicted data. If false, select 
-            the largest effect and compare the observed data against that. This accommodates a block in differentiation, e.g. SOX17 KD in endoderm.
     Returns:
         Tuple[anndata.AnnData, anndata.AnnData]: the observed test data and the predictions, with a one-to-one match between them.
     """
@@ -542,31 +591,14 @@ def select_comparable_observed_and_predicted(
     predictions.obs["cell_type"] = predictions.obs["cell_type"].astype("str")
     test_data.obs["timepoint"] = test_data.obs["timepoint"].astype("Int64")
     predictions.obs["takedown_timepoint"] = predictions.obs["takedown_timepoint"].astype(float).round(0).astype("Int64")
-    if is_timescale_strict:
-        # Match the timepoint to the observed data
-        matched_predictions = pd.merge(
-            test_data.obs[  [         'timepoint',          "cell_type", 'perturbation', "expression_level_after_perturbation", "observed_index"]], 
-            predictions.obs[['takedown_timepoint',          "cell_type", 'perturbation', "expression_level_after_perturbation", "predicted_index"]], 
-            left_on =['timepoint',          "cell_type", 'perturbation', "expression_level_after_perturbation"],
-            right_on=['takedown_timepoint', "cell_type", 'perturbation', "expression_level_after_perturbation"],
-            how='inner', 
-        )
-    else:
-        # Select the timepoint with the largest effects from the predictions. 
-        predictions.obs["effect_size"] = 0
-        for i in predictions.obs.index:
-            t,c = predictions.obs.loc[i, ['takedown_timepoint', "cell_type"]]
-            matched_control = predictions.obs.query("takedown_timepoint==@t & cell_type==@c & is_control").index
-            predictions.obs.loc[i, "effect_size"] = np.linalg.norm( predictions[i, :].X - predictions[matched_control, :].X )
-        largest_effects = predictions[predictions.obs.groupby(['perturbation'])['effect_size'].idxmax(), :]
-        matched_predictions = pd.merge(
-            test_data.obs      [["cell_type", 'perturbation', "expression_level_after_perturbation", "observed_index"]], 
-            largest_effects.obs[["cell_type", 'perturbation', "expression_level_after_perturbation", "predicted_index", "takedown_timepoint"]], 
-            left_on =['perturbation', "expression_level_after_perturbation"],
-            right_on=['perturbation', "expression_level_after_perturbation"],
-            how='inner', 
-        )
-
+    # Match the timepoint to the observed data
+    matched_predictions = pd.merge(
+        test_data.obs[  [         'timepoint',          "cell_type", 'perturbation', "expression_level_after_perturbation", "observed_index"]], 
+        predictions.obs[['takedown_timepoint',          "cell_type", 'perturbation', "expression_level_after_perturbation", "predicted_index"]], 
+        left_on =['timepoint',          "cell_type", 'perturbation', "expression_level_after_perturbation"],
+        right_on=['takedown_timepoint', "cell_type", 'perturbation', "expression_level_after_perturbation"],
+        how='inner', 
+    )
     print(f"Selected {matched_predictions.shape[0]} samples where observed and predicted expression are comparable.")
     assert "is_control" in predictions.obs.columns
     assert "is_control" in test_data.obs.columns
@@ -648,9 +680,6 @@ def evaluate_per_pert(
         baseline_observed: np.matrix, 
         classifier = None, 
         pca20 = None,
-        viz_2d = None,
-        progenitor: np.matrix = None,
-        baseline_training: np.matrix = None,
     ) -> pd.DataFrame:
     """Calculate evaluation metrics for one perturbation. 
 
@@ -664,9 +693,6 @@ def evaluate_per_pert(
         baseline (np.matrix): baseline expression, log1p-scale
         classifier (optional): None or sklearn classifier to judge results by cell type label accuracy
         pca20 (optional): None or sklearn PCA object to project expression into a lower-dimensional space
-        viz_2d: fitted model that predicts 2d embedding coordinates from log-scale expression. Trained on the training data.
-        baseline_training (np.matrix, optional): average expression of training cells with the same cell type as these predictions and observations. log1p-scale
-        progenitor (np.matrix, optional): average expression of progenitors of cells that contributed to baseline_training, log1p-scale
 
     Returns:
         pd.DataFrame: Evaluation results for each perturbation
@@ -681,26 +707,12 @@ def evaluate_per_pert(
     results["num_observations_in_group"] = i.sum()
     results["cell_type_correct"] = np.nan
     if classifier is not None:
-        class_observed  = classifier.predict(np.reshape(observed, (1, -1)))[0]
+        class_observed  = classifier.predict(np.reshape(observed,  (1, -1)))[0]
         class_predicted = classifier.predict(np.reshape(predicted, (1, -1)))[0]
         results["cell_type_correct"] = 1.0 * (class_observed == class_predicted)
     results["distance_in_pca"] = np.nan
     if pca20 is not None:
         results["distance_in_pca"] = np.linalg.norm(pca20.transform(observed.reshape(1, -1)) - pca20.transform(predicted.reshape(1, -1)))**2
-    if viz_2d is not None:
-        viz_embedding_predicted  = viz_2d.predict((predicted - baseline_predicted + baseline_training[group, ]).reshape(1, -1))
-        viz_embedding_progenitor = viz_2d.predict(progenitor[group, :].reshape(1, -1))
-        viz_embedding_test       = viz_2d.predict((observed - baseline_observed + baseline_training[group, ]).reshape(1, -1))
-        viz_embedding_train      = viz_2d.predict(baseline_training[group, :].reshape(1, -1))
-        results["viz1_predicted"]  = viz_embedding_predicted[0,0]
-        results["viz2_predicted"]  = viz_embedding_predicted[0,1]
-        results["viz1_progenitor"] = viz_embedding_progenitor[0,0]
-        results["viz2_progenitor"] = viz_embedding_progenitor[0,1]
-        results["viz1_test"]       = viz_embedding_test[0,0]
-        results["viz2_test"]       = viz_embedding_test[0,1]
-        results["viz1_train"]      = viz_embedding_train[0,0]
-        results["viz2_train"]      = viz_embedding_train[0,1]
-        results["delay_score"]     = viz_embedding_progenitor.dot(viz_embedding_predicted.T)[0,0]
     return pd.DataFrame(results, index = [group])
 
 def evaluate_across_perts(
@@ -708,15 +720,11 @@ def evaluate_across_perts(
     predictedExpression: anndata.AnnData, 
     baseline_predicted: anndata.AnnData, 
     baseline_observed: anndata.AnnData, 
-    train: anndata.AnnData,
     experiment_name: str, 
     classifier = None, 
     pca20 = None,
     do_careful_checks: bool=False, 
     do_parallel: bool = True, 
-    viz_2d = None,
-    baseline_training = None,
-    progenitor = None,
     group_by = ['timepoint', 'cell_type', 'perturbation'],
 ) -> pd.DataFrame:
     """Evaluate performance for each perturbation.
@@ -732,9 +740,6 @@ def evaluate_across_perts(
         do_careful_checks (bool, optional): ensure that perturbation and dose match between observed
             and predicted expression. Defaults to False.
         do_parallel (bool, optional): if True, use joblib to parallelize the evaluation across perturbations. Defaults to True.
-        viz_2d: supervised classifier that predicts 2d embeddings from log-scale expression, trained on the training data 
-        baseline_training (np.matrix, optional): average expression of training cells with the same cell type as these predictions and observations. log1p-scale
-        progenitor (np.matrix, optional): average expression of progenitors of cells that contributed to baseline_training, log1p-scale
         group_by (list, optional): If many observations have the same values of all these attributes, they will be summarized in one single row of the evaluations.
     Returns:
         pd.DataFrame: _description_
@@ -742,7 +747,7 @@ def evaluate_across_perts(
     assert "timepoint" in expression.obs.columns
     # Thank you to JohnE: https://stackoverflow.com/a/41638343/3371472
     group_numbers = predictedExpression.obs[group_by].drop_duplicates().reset_index(drop=True).reset_index().rename({"index":"group"}, axis=1)
-    predictedExpression.obs = predictedExpression.obs.merge( group_numbers, on=group_by )
+    predictedExpression.obs = predictedExpression.obs.reset_index().merge( group_numbers, on=group_by, how = "left" ).set_index('index')
     print(f"Evaluating {predictedExpression.obs['group'].max()} groups based on {group_by}.", flush=True)
     predictedExpression = predictedExpression.to_memory()
 
@@ -770,22 +775,7 @@ def evaluate_across_perts(
                     print(predictedExpression.obs.loc[mismatches, c].fillna(0).head())
                     raise ValueError(f"Expression and predicted expression have mismatched '{c}' metadata in experiment {experiment_name}. Check stdout for summary statistics.")
     
-    # Prepare additional data needed for visualization
-    if viz_2d is not None:
-        baseline_training = np.zeros((predictedExpression.obs["group"].nunique(), predictedExpression.shape[1]))
-        progenitor = baseline_training.copy()
-        for group in predictedExpression.obs["group"].unique():
-            group_metadata = predictedExpression[predictedExpression.obs["group"]==group, :]
-            celltype = group_metadata.obs["cell_type"].unique()[0]
-            timepoint = group_metadata.obs["timepoint"].unique()[0]
-            train_cells = (train.obs["cell_type"]==celltype) & (train.obs["timepoint"]==timepoint)
-            train = match_timeseries(train,   matching_method="optimal_transport", matched_control_is_integer=False)
-            progenitor[group, :] = train[train.obs.loc[train_cells, "matched_control"], :].X.mean(0)
-            baseline_training[group, :] = train[train_cells, :].X.mean(0)
-    else:
-        viz_2d = None
-        progenitor = None
-        baseline_training = None
+    
     
     # Evals via joblib by default. it go fast.
     if do_parallel:
@@ -800,9 +790,6 @@ def evaluate_across_perts(
                     baseline_observed, 
                     classifier, 
                     pca20, 
-                    viz_2d, 
-                    progenitor,
-                    baseline_training, 
                 ) 
                 for group in predictedExpression.obs["group"].unique()
             )
@@ -817,9 +804,6 @@ def evaluate_across_perts(
                 baseline_observed, 
                 classifier, 
                 pca20,
-                viz_2d,
-                progenitor,
-                baseline_training,
             ) 
             for group in predictedExpression.obs["group"].unique()
         ]
@@ -837,10 +821,8 @@ def evaluateOnePrediction(
     doPlots = False, 
     classifier=None, 
     pca20=None,
-    viz_2d = None,
     do_careful_checks = True, 
     do_parallel: bool = True, 
-    train = anndata.AnnData,
 ):
     '''Compare observed against predicted, for expression, fold-change, or cell type.
 
@@ -860,12 +842,10 @@ def evaluateOnePrediction(
                         Must have a predict() method capable of taking a value from expression or predictedExpression and returning a single class label. 
                     pca20 (sklearn PCA):
                         PCA or other sklearn dimension reduction object to project expression into a lower-dimensional space.
-                    viz_2d: fitted model that predicts 2d embedding coordinates from log-scale expression. Trained on the training data.
                     doPlots (bool): Make a scatterplot showing observed vs predicted, one dot per gene. 
                     do_careful_checks (bool): check gene name and expression level associated with each perturbation.
                         They must match between expression and predictionExpression.
                     do_parallel (bool): use joblib to parallelize the evaluation across perturbations.
-                    train (AnnData): training data, used to calculate the baseline expression level for each cell type and timepoint.
 
             Returns:
                     Pandas DataFrame with Spearman correlation between predicted and observed 
@@ -898,10 +878,6 @@ def evaluateOnePrediction(
             pca20 = pca20,
             do_careful_checks = do_careful_checks, 
             do_parallel = do_parallel, 
-            viz_2d = viz_2d,
-            baseline_training = None,
-            progenitor = None,
-            train = train,
         )
     metrics["spearman"] = metrics["spearman"].astype(float)
     hardest = metrics["spearman"].idxmin()
@@ -965,7 +941,7 @@ def assert_perturbation_metadata_match(
         print((predicted.shape, observed.shape), flush = True)
         raise AssertionError("Predicted and observed anndata are different shapes.")
     predicted.obs_names = observed.obs_names
-    for c in ["perturbation", "expression_level_after_perturbation"]:
+    for c in fields_to_check:
         # 1 == 1.0 but '1' != '1.0'
         if c=="expression_level_after_perturbation":
             try:
