@@ -33,8 +33,6 @@ parser.add_argument('--data', type=str, default='../perturbation_data/perturbati
 parser.add_argument('--tf', type=str, default = "../accessory_data/tf_lists",     help="Location of per-species lists of TFs on your hard drive")
 parser.add_argument('--output', type=str, default = "experiments",     help="Folder to save the output in.")
 parser.add_argument('--input', type=str, default = "experiments",     help="metadata.json should be in <input>/<experiment_name>/metadata.json.")
-
-parser.set_defaults(feature=True)
 parser.add_argument(
     "--amount_to_do",
     choices = ["evaluations", "models", "missing_models"],
@@ -47,6 +45,7 @@ parser.add_argument(
     an empty results file like 'touch experiments/my_experiment/outputs/results/predictions/3.h5ad'.
     """
 )
+parser.set_defaults(feature=True)
 args = parser.parse_args()
 print("args to experimenter.py:", flush = True)
 print(args)
@@ -233,8 +232,18 @@ if args.amount_to_do in {"models", "missing_models", "evaluations"}:
             del perturbed_expression_data_train_i
             del perturbed_expression_data_heldout_i
             gc.collect()
-    
-    print("(Re)doing evaluations")
+
+    if screen is not None:
+        predictions_screen = {i:sc.read_h5ad( os.path.join(outputs, "predictions_screen",   str(i) + ".h5ad" ), backed='r' ) for i in conditions.index}
+        print("Evaluating against single-phenotype screen data", flush = True)
+        evaluator.evaluateScreen(
+            get_current_data_split,
+            predicted_expression=predictions_screen,
+            conditions=conditions,
+            outputs=outputs,
+            screen=screen
+        )
+    print("Evaluating against perturbation transcriptomic data", flush = True)
     evaluationPerPert, evaluationPerTarget = evaluator.evaluateCausalModel(
         get_current_data_split = get_current_data_split, 
         predicted_expression =  predictions,
