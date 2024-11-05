@@ -18,6 +18,7 @@ import gc
 from sklearn.neighbors import KNeighborsRegressor
 from ggrn.api import match_timeseries
 from sklearn.pipeline import make_pipeline
+from typing import Optional
 
 def test_targets_vs_non_targets( predicted, observed, baseline_predicted, baseline_observed ): 
     predicted = np.squeeze(np.array(predicted))
@@ -331,25 +332,33 @@ def postprocessEvaluations(evaluations: pd.DataFrame,
 def summarizeGrossEffects(
         viz_2d, 
         perturbed_expression_data_train_i: anndata.AnnData,
-        perturbed_expression_data_heldout_i: anndata.AnnData, 
+        perturbed_expression_data_heldout_i: Optional[anndata.AnnData], 
         predicted_expression: Dict[int, anndata.AnnData], 
         i: int, 
-        outputs: str):
+        outputs: str,
+        screen: Optional[pd.DataFrame]
+    ):
     """Project train, test, and predicted data into 2d. Match up predictions with relevant controls and adjacent timepoints to summarize gross effects on differentiation.
 
     Args:
         viz_2d: fitted 2d visualization model trained on the training data. Predicts 2d coordinates from expression.
-        perturbed_expression_data_train_i (anndata.AnnData): _description_
-        perturbed_expression_data_heldout_i (anndata.AnnData): _description_
-        predicted_expression (Dict[int, anndata.AnnData]): _description_
+        perturbed_expression_data_train_i (anndata.AnnData or None): training data (optional)
+        perturbed_expression_data_heldout_i (anndata.AnnData): test data.
+        predicted_expression (Dict[int, anndata.AnnData]): predictions
         i (int): index of the condition being evaluated
         outputs (str): folder where to save the results
+        screen (Optional[pd.DataFrame]): output from a single-phenotype CRISPR screen or similar
     """
     print(f"Computing 2d visualizations for condition {i}")
     # Visualize test data
-    test_data_projection = perturbed_expression_data_heldout_i.obs
-    test_data_projection.loc[:, ["viz1", "viz2"]] = viz_2d.predict(perturbed_expression_data_heldout_i.X)
-    
+    try:
+        test_data_projection = perturbed_expression_data_heldout_i.obs
+        test_data_projection.loc[:, ["viz1", "viz2"]] = viz_2d.predict(perturbed_expression_data_heldout_i.X)
+        os.makedirs(os.path.join(outputs, "projection_test"), exist_ok=True)
+        test_data_projection.to_csv(os.path.join(outputs, f"projection_test/{i}.csv"))
+    except AttributeError:
+        pass
+
     # Visualize predictions
     predicted_expression[i].obs[["viz1", "viz2"]] = viz_2d.predict(predicted_expression[i].X)
 
@@ -381,18 +390,25 @@ def summarizeGrossEffects(
     observed_controls["velocity_viz1"] = observed_controls["train_viz1"] - observed_controls["progenitor_viz1"]
     observed_controls["velocity_viz2"] = observed_controls["train_viz2"] - observed_controls["progenitor_viz2"]
     
+    # This is hardwired in the part of the code that makes predictions for comparison to low-dimensional CRISPR screen data.
+    # We lack post-perturbation expression, so we use 0 for KO, max across cells/genes for OE, and we don't simulate KD. 
+    observed_controls["perturbation_type"] = observed_controls["perturbation_type"].str.replace("knockdown", "knockout") 
     # perturbation score: inner product of velocity and predicted log FC
     observed_controls = pd.merge(
         observed_controls,
-        predicted_expression[i].obs[['cell_type', 'timepoint', "perturbation", 'perturbation_type', "predicted_delta_viz1", "predicted_delta_viz2"]],
+        predicted_expression[i].obs[['cell_type', 'timepoint', "perturbation", 'perturbation_type', "predicted_delta_viz1", "predicted_delta_viz2", "prediction_timescale"]],
         on=['cell_type', 'perturbation_type', 'timepoint'],
         how='left'
     )
     observed_controls["perturbation_score"] = observed_controls["velocity_viz1"] * observed_controls["predicted_delta_viz1"] + observed_controls["velocity_viz2"] * observed_controls["predicted_delta_viz2"]
-    
+    if screen is not None:
+        observed_controls = pd.merge(
+            observed_controls, 
+            screen, 
+            how = "left", 
+            on = ["perturbation"]
+        )
     # Save it all 
-    os.makedirs(os.path.join(outputs, "projection_test"), exist_ok=True)
-    test_data_projection.to_csv(os.path.join(outputs, f"projection_test/{i}.csv"))
     os.makedirs(os.path.join(outputs, "projection_predictions"), exist_ok=True)
     predicted_expression[i].obs.to_csv(os.path.join(outputs, f"projection_predictions/{i}.csv"))
     os.makedirs(os.path.join(outputs, "projection_train"), exist_ok=True)
@@ -400,6 +416,36 @@ def summarizeGrossEffects(
 
     return
 
+def evaluateScreen(
+    get_current_data_split:callable, 
+    predicted_expression: dict,
+    conditions: pd.DataFrame,
+    outputs: str,
+    screen: pd.DataFrame,
+): 
+    """Evaluate the performance of the predictions on a screen of perturbations.
+    
+    Args:
+        get_current_data_split: function to retrieve tuple of anndatas (train, test)
+        predicted_expression: dict with keys equal to the index in "conditions" and values being anndata objects.
+        conditions (pd.DataFrame): Metadata for the different combinations used in this experiment.
+        outputs (String): Saves output here.
+        screen (pd.DataFrame): Output from a single-phenotype CRISPR screen or similar.
+    """
+
+    for i in predicted_expression.keys():
+        perturbed_expression_data_train_i, perturbed_expression_data_heldout_i = get_current_data_split(i)
+        try:
+            embedding = conditions.loc[i, "visualization_embedding"]
+            viz_2d = make_pipeline(KNeighborsRegressor(n_neighbors=10))
+            viz_2d.fit(X = perturbed_expression_data_train_i.X, y = perturbed_expression_data_train_i.obsm[embedding][:, 0:2])
+            summarizeGrossEffects(viz_2d, perturbed_expression_data_train_i, perturbed_expression_data_heldout_i, predicted_expression, i, os.path.join(outputs, "screen"), screen)
+        except Exception as e:
+            print(f"Failed to project into 2d for evaluation with error: \n'''\n {repr(e)}\n'''\n. Try the following embeddings instead?", flush=True)
+            print(perturbed_expression_data_train_i.obsm.keys())
+            embedding = None
+            viz_2d = None
+    return
 
 def evaluateCausalModel(
     get_current_data_split:callable, 
@@ -443,15 +489,15 @@ def evaluateCausalModel(
         except AttributeError: # data not sparse
             pca20.fit(perturbed_expression_data_train_i.X)
         embedding = conditions.loc[i, "visualization_embedding"]
-        # try:
-        viz_2d = make_pipeline(KNeighborsRegressor(n_neighbors=10))
-        viz_2d.fit(X = perturbed_expression_data_train_i.X, y = perturbed_expression_data_train_i.obsm[embedding][:, 0:2])
-        summarizeGrossEffects(viz_2d, perturbed_expression_data_train_i, perturbed_expression_data_heldout_i, predicted_expression, i, outputs)
-        # except Exception as e:
-        #     print(f"Failed to project into 2d for evaluation with error: \n'''\n {repr(e)}\n'''\n. Try the following embeddings instead?", flush=True)
-        #     print(perturbed_expression_data_train_i.obsm.keys())
-        #     embedding = None
-        #     viz_2d = None
+        try:
+            viz_2d = make_pipeline(KNeighborsRegressor(n_neighbors=10))
+            viz_2d.fit(X = perturbed_expression_data_train_i.X, y = perturbed_expression_data_train_i.obsm[embedding][:, 0:2])
+            summarizeGrossEffects(viz_2d, perturbed_expression_data_train_i, perturbed_expression_data_heldout_i, predicted_expression, i, outputs, screen = None)
+        except Exception as e:
+            print(f"Failed to project into 2d for evaluation with error: \n'''\n {repr(e)}\n'''\n. Try the following embeddings instead?", flush=True)
+            print(perturbed_expression_data_train_i.obsm.keys())
+            embedding = None
+            viz_2d = None
         all_test_data = perturbed_expression_data_heldout_i if is_test_set else perturbed_expression_data_train_i # sometimes we predict the training data.
         evaluations = {}
         if "prediction_timescale" not in predicted_expression[i].obs.columns:
@@ -547,13 +593,13 @@ def evaluateCausalModel(
             evaluations[prediction_timescale][1]["index"] = i
             evaluations[prediction_timescale][0]["prediction_timescale"] = prediction_timescale
             evaluations[prediction_timescale][1]["prediction_timescale"] = prediction_timescale
-    print(f"Finished evaluating condition {i}. Concatenating outputs.")
-    evaluationPerPert  [i] = pd.concat([evaluations[t][0] for t in timescales])
-    evaluationPerTarget[i] = pd.concat([evaluations[t][1] for t in timescales])
-    assert "prediction_timescale" in evaluationPerPert[i].columns
-    assert "prediction_timescale" in evaluationPerTarget[i].columns
-    predicted_expression[i] = None
-    gc.collect()
+        print(f"Finished evaluating condition {i}. Concatenating outputs.")
+        evaluationPerPert  [i] = pd.concat([evaluations[t][0] for t in timescales])
+        evaluationPerTarget[i] = pd.concat([evaluations[t][1] for t in timescales])
+        assert "prediction_timescale" in evaluationPerPert[i].columns
+        assert "prediction_timescale" in evaluationPerTarget[i].columns
+        predicted_expression[i] = None
+        gc.collect()
     # Concatenate and add some extra info
     # postprocessEvaluations wants a list of datafrmaes with one dataframe per row in conditions
     try: 
