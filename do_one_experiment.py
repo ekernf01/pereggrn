@@ -33,6 +33,7 @@ parser.add_argument('--data', type=str, default='../perturbation_data/perturbati
 parser.add_argument('--tf', type=str, default = "../accessory_data/tf_lists",     help="Location of per-species lists of TFs on your hard drive")
 parser.add_argument('--output', type=str, default = "experiments",     help="Folder to save the output in.")
 parser.add_argument('--input', type=str, default = "experiments",     help="metadata.json should be in <input>/<experiment_name>/metadata.json.")
+parser.add_argument('--verbosity', type=int, default = 1,     help="How much to print out; 0 or 1 or 2.")
 parser.add_argument(
     "--amount_to_do",
     choices = ["evaluations", "models", "missing_models"],
@@ -47,8 +48,9 @@ parser.add_argument(
 )
 parser.set_defaults(feature=True)
 args = parser.parse_args()
-print("args to experimenter.py:", flush = True)
-print(args)
+if args.verbosity >= 1:
+    print("args to experimenter.py:", flush = True)
+    print(args)
 
 # Access our data collections
 pereggrn_networks.set_grn_location(
@@ -61,7 +63,7 @@ pereggrn_perturbations.set_data_path(
 # Default args to this script for interactive use
 if args.experiment_name is None:
     args = Namespace(**{
-        "experiment_name": "1.2.2_14",
+        "experiment_name": "1.2.2_15",
         "amount_to_do": "missing_models",
         "save_trainset_predictions": False,
         "output": "experiments",
@@ -71,13 +73,15 @@ if args.experiment_name is None:
         "skip_bad_runs": False, # Makes debug/traceback easier
         "no_parallel": True, # Makes debug/traceback easier
         "do_memory_profiling": False,
+        "verbosity": 2,
     })
 # Additional bookkeeping
 print("Running experiment", flush = True)
 outputs = os.path.join(args.output, args.experiment_name, "outputs")
 os.makedirs(outputs, exist_ok=True)
 metadata = experimenter.validate_metadata(experiment_name=args.experiment_name, input_folder=args.input)
-print("Starting at " + str(datetime.datetime.now()), flush = True)
+if args.verbosity >= 1:
+    print("Starting at " + str(datetime.datetime.now()), flush = True)
 
 try:
     tf_list_path = os.path.join(args.tf, metadata["species"] + ".txt")
@@ -134,8 +138,9 @@ for i in conditions.index:
             except FileNotFoundError:
                 pass
             try:
-                print(f"Fitting model for condition {i} at " + str(datetime.datetime.now()), flush = True)
-                print(conditions.loc[i,:].T)
+                if args.verbosity >= 1:
+                    print(f"Fitting model for condition {i} at " + str(datetime.datetime.now()), flush = True)
+                    print(conditions.loc[i,:].T)
                 start_time = time.time()
                 try:
                     os.unlink(train_mem_file)
@@ -175,7 +180,8 @@ for i in conditions.index:
                     peak_ram = [p for p in peak_ram if ("B" in p)][0]
                     peak_ram = peak_ram.split("│")[2].strip()
                 except:
-                    print(f"Memory profiling results are not found or not as expected. If you passed in --do_memory_profiling, you may find the raw memray output in {train_mem_file} and try to parse it yourself, then save it to {train_time_file}.")
+                    if args.verbosity >= 1:
+                        print(f"Memory profiling results are not found or not as expected. If you passed in --do_memory_profiling, you may find the raw memray output in {train_mem_file} and try to parse it yourself, then save it to {train_time_file}.")
                     peak_ram = np.nan
                 pd.DataFrame({"walltime (seconds)":train_time, "peak RAM": peak_ram}, index = [i]).to_csv(train_time_file)
             except Exception as e: 
@@ -186,7 +192,8 @@ for i in conditions.index:
                 continue
 
             if args.save_models:
-                print("Saving models...", flush = True)
+                if args.verbosity >= 1:
+                    print("Saving models...", flush = True)
                 grn.save_models( models )
             
             # Make predictions on test and (maybe) train set
@@ -223,10 +230,12 @@ if args.amount_to_do in {"models", "missing_models", "evaluations"}:
     except FileNotFoundError:
         fitted_values = None
     # Check sizes before running all evaluations because it helps catch errors sooner.
-    print("Checking sizes: ", flush = True)
+    if args.verbosity >= 1:
+        print("Checking sizes: ", flush = True)
     for i in conditions.index:
         if conditions.loc[i, "type_of_split"] != "timeseries":
-            print(f"- {i}", flush=True)
+            if args.verbosity >= 1:
+                print(f"- {i}", flush=True)
             perturbed_expression_data_train_i, perturbed_expression_data_heldout_i = get_current_data_split(i)
             evaluator.assert_perturbation_metadata_match(predictions[i], perturbed_expression_data_heldout_i)       
             del perturbed_expression_data_train_i
@@ -235,15 +244,18 @@ if args.amount_to_do in {"models", "missing_models", "evaluations"}:
 
     if screen is not None:
         predictions_screen = {i:sc.read_h5ad( os.path.join(outputs, "predictions_screen",   str(i) + ".h5ad" ), backed='r' ) for i in conditions.index}
-        print("Evaluating against single-phenotype screen data", flush = True)
+        if args.verbosity >= 1:
+            print("Evaluating against single-phenotype screen data", flush = True)
         evaluator.evaluateScreen(
             get_current_data_split,
             predicted_expression=predictions_screen,
             conditions=conditions,
             outputs=outputs,
-            screen=screen
+            screen=screen, 
+            skip_bad_runs=args.skip_bad_runs,
         )
-    print("Evaluating against perturbation transcriptomic data", flush = True)
+    if args.verbosity >= 1:
+        print("Evaluating against perturbation transcriptomic data", flush = True)
     evaluationPerPert, evaluationPerTarget = evaluator.evaluateCausalModel(
         get_current_data_split = get_current_data_split, 
         predicted_expression =  predictions,
@@ -252,13 +264,16 @@ if args.amount_to_do in {"models", "missing_models", "evaluations"}:
         outputs = outputs,
         do_scatterplots = False,
         do_parallel = not args.no_parallel, 
+        verbosity=args.verbosity,
     )
     # pyarrow cannot handle int 
-    print("Sanitizing evaluation results", flush = True)
+    if args.verbosity >= 1:
+        print("Sanitizing evaluation results", flush = True)
     evaluator.convert_to_simple_types(evaluationPerPert, types = [float, str]).to_parquet(   os.path.join(outputs, "evaluationPerPert.parquet"))
     evaluator.convert_to_simple_types(evaluationPerTarget, types = [float, str]).to_parquet( os.path.join(outputs, "evaluationPerTarget.parquet"))
     if fitted_values is not None:
-        print("(Re)doing evaluations on (training set predictions)")
+        if args.verbosity >= 1:
+            print("(Re)doing evaluations on (training set predictions)")
         evaluationPerPertTrainset, evaluationPerTargetTrainset = evaluator.evaluateCausalModel(
             get_current_data_split = get_current_data_split, 
             predicted_expression =  fitted_values,
@@ -268,6 +283,7 @@ if args.amount_to_do in {"models", "missing_models", "evaluations"}:
             classifier_labels = None, # Default is to look for "louvain" or give up
             do_scatterplots = False,
             do_parallel = not args.no_parallel,
+            verbosity=args.verbosity,
         )
         os.makedirs(os.path.join(outputs, "trainset_performance"), exist_ok=True)
         evaluationPerPertTrainset.to_parquet(   os.path.join(outputs, "trainset_performance", "evaluationPerPert.parquet"))

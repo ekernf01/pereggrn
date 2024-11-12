@@ -86,6 +86,7 @@ def get_default_metadata():
         "does_simulation_progress": None,
         "visualization_embedding": None,
         "species": "human",
+        "matching_method_for_evaluation": "optimal_transport",
     }
 
 def validate_metadata(

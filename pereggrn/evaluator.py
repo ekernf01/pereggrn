@@ -336,7 +336,8 @@ def summarizeGrossEffects(
         predicted_expression: Dict[int, anndata.AnnData], 
         i: int, 
         outputs: str,
-        screen: Optional[pd.DataFrame]
+        screen: Optional[pd.DataFrame],
+        matching_method: str = "optimal_transport"
     ):
     """Project train, test, and predicted data into 2d. Match up predictions with relevant controls and adjacent timepoints to summarize gross effects on differentiation.
 
@@ -347,7 +348,10 @@ def summarizeGrossEffects(
         predicted_expression (Dict[int, anndata.AnnData]): predictions
         i (int): index of the condition being evaluated
         outputs (str): folder where to save the results
-        screen (Optional[pd.DataFrame]): output from a single-phenotype CRISPR screen or similar
+        screen (Optional[pd.DataFrame]): output from a single-phenotype CRISPR screen or similar, 
+        matching_method (str): how to match up cells with progenitors to compute perturbation scores. See `ggrn.api.match_timeseries` for options.
+            This cannot be "steady_state", because then the velocity would appear to be 0. Thus, it defaults to "optimal_transport", and users can 
+            set it independently.
     """
     print(f"Computing 2d visualizations for condition {i}")
     # Visualize test data
@@ -380,8 +384,8 @@ def summarizeGrossEffects(
     # Visualize training data
     perturbed_expression_data_train_i.obs[["viz1", "viz2"]] = viz_2d.predict(perturbed_expression_data_train_i.X)
     
-    # Compute training data "velocity"-ish thing: delta expression over progenitors assigned by OT 
-    perturbed_expression_data_train_i = match_timeseries(perturbed_expression_data_train_i, matching_method="optimal_transport", matched_control_is_integer=False)    
+    # Compute training data "velocity"-ish thing: delta expression between this timepoint and descendents at next timepoint, assigned by OT 
+    perturbed_expression_data_train_i = match_timeseries(perturbed_expression_data_train_i, matching_method=matching_method, matched_control_is_integer=False, do_look_backwards = True)    
     observed_controls = perturbed_expression_data_train_i.obs[viz_relevant_metadata + ["matched_control"]].copy()
     observed_controls = observed_controls.rename(columns={'viz1': 'train_viz1', 'viz2': 'train_viz2'})
     has_matched_control = observed_controls["matched_control"].notnull()  
@@ -422,6 +426,7 @@ def evaluateScreen(
     conditions: pd.DataFrame,
     outputs: str,
     screen: pd.DataFrame,
+    skip_bad_runs: bool = True
 ): 
     """Evaluate the performance of the predictions on a screen of perturbations.
     
@@ -431,20 +436,31 @@ def evaluateScreen(
         conditions (pd.DataFrame): Metadata for the different combinations used in this experiment.
         outputs (String): Saves output here.
         screen (pd.DataFrame): Output from a single-phenotype CRISPR screen or similar.
+        skip_bad_runs (bool): If True, skip runs that fail to project into 2d. If False, raise an error.
     """
 
     for i in predicted_expression.keys():
         perturbed_expression_data_train_i, perturbed_expression_data_heldout_i = get_current_data_split(i)
         try:
             embedding = conditions.loc[i, "visualization_embedding"]
-            viz_2d = make_pipeline(KNeighborsRegressor(n_neighbors=10))
+            viz_2d = make_pipeline(KNeighborsRegressor(n_neighbors=1))
             viz_2d.fit(X = perturbed_expression_data_train_i.X, y = perturbed_expression_data_train_i.obsm[embedding][:, 0:2])
-            summarizeGrossEffects(viz_2d, perturbed_expression_data_train_i, perturbed_expression_data_heldout_i, predicted_expression, i, os.path.join(outputs, "screen"), screen)
+            summarizeGrossEffects(viz_2d, 
+                                  perturbed_expression_data_train_i, 
+                                  perturbed_expression_data_heldout_i, 
+                                  predicted_expression, 
+                                  i=i, 
+                                  outputs = os.path.join(outputs, "screen"), 
+                                  screen = screen, 
+                                  matching_method=conditions.loc[i, "matching_method_for_evaluation"])
         except Exception as e:
-            print(f"Failed to project into 2d for evaluation with error: \n'''\n {repr(e)}\n'''\n. Try the following embeddings instead?", flush=True)
-            print(perturbed_expression_data_train_i.obsm.keys())
-            embedding = None
-            viz_2d = None
+            if skip_bad_runs:
+                print(f"Failed to project into 2d for evaluation with error: \n'''\n {repr(e)}\n'''\n. Try the following embeddings instead?", flush=True)
+                print(perturbed_expression_data_train_i.obsm.keys())
+                embedding = None
+                viz_2d = None
+            else:
+                raise e
     return
 
 def evaluateCausalModel(
@@ -457,6 +473,7 @@ def evaluateCausalModel(
     do_scatterplots = False, 
     path_to_accessory_data: str = "../accessory_data",
     do_parallel: bool = True,
+    verbosity: int = 0
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """Compile plots and tables comparing heldout data and predictions for same. 
 
@@ -492,7 +509,16 @@ def evaluateCausalModel(
         try:
             viz_2d = make_pipeline(KNeighborsRegressor(n_neighbors=10))
             viz_2d.fit(X = perturbed_expression_data_train_i.X, y = perturbed_expression_data_train_i.obsm[embedding][:, 0:2])
-            summarizeGrossEffects(viz_2d, perturbed_expression_data_train_i, perturbed_expression_data_heldout_i, predicted_expression, i, outputs, screen = None)
+            summarizeGrossEffects(
+                viz_2d, 
+                perturbed_expression_data_train_i, 
+                perturbed_expression_data_heldout_i, 
+                predicted_expression, 
+                i,
+                outputs, 
+                screen = None, 
+                matching_method=conditions.loc[i, "matching_method_for_evaluation"],
+            )
         except Exception as e:
             print(f"Failed to project into 2d for evaluation with error: \n'''\n {repr(e)}\n'''\n. Try the following embeddings instead?", flush=True)
             print(perturbed_expression_data_train_i.obsm.keys())
@@ -516,11 +542,12 @@ def evaluateCausalModel(
             all_test_data.obs["timepoint"] = 0
         if not "cell_type" in all_test_data.obs.columns: 
             all_test_data.obs["cell_type"] = 0
-        
-        print(f"Evaluating condition {i}")
+        if verbosity >= 1:
+            print(f"Evaluating condition {i}")
         evaluations = dict()
         for prediction_timescale in timescales:
-            print(f"    Timescale selected: {prediction_timescale}.")
+            if verbosity >= 1:
+                print(f"    Timescale selected: {prediction_timescale}.")
             predicted_expression_it = predicted_expression[i]
             predicted_expression_it = predicted_expression_it[predicted_expression_it.obs["prediction_timescale"]==prediction_timescale, :]
             if conditions.loc[i, "type_of_split"] == "timeseries":
@@ -534,9 +561,11 @@ def evaluateCausalModel(
                     i = i,
                     # I don't care if this is somewhat redundant with the classifier used below. We need both even if not elegant.
                     classifier = experimenter.train_classifier(perturbed_expression_data_train_i, target_key = "cell_type"), 
+                    verbosity=verbosity
                 )
                 if current_heldout.n_obs == 0:
-                    print("Skipping evaluation because no comparable observations were found.")
+                    if verbosity >= 1:
+                        print("Skipping evaluation because no comparable observations were found.")
                     evaluations[prediction_timescale] = dict()
                     evaluations[prediction_timescale][0] = pd.DataFrame()
                     evaluations[prediction_timescale][1] = pd.DataFrame()
@@ -559,7 +588,8 @@ def evaluateCausalModel(
                 baseline_predicted = baseline_observed.copy()
 
             assert "timepoint" in current_heldout.obs.columns
-            print("Training a classifier.")
+            if verbosity >= 1:
+                print("Training a classifier.")
             classifier_labels = "cell_type" if (conditions.loc[i, "type_of_split"]=="timeseries") else None # If you pass None, it will look for "louvain" or give up.
             c = experimenter.train_classifier(perturbed_expression_data_train_i, target_key = classifier_labels)
             evaluations[prediction_timescale] = evaluateOnePrediction(
@@ -593,7 +623,8 @@ def evaluateCausalModel(
             evaluations[prediction_timescale][1]["index"] = i
             evaluations[prediction_timescale][0]["prediction_timescale"] = prediction_timescale
             evaluations[prediction_timescale][1]["prediction_timescale"] = prediction_timescale
-        print(f"Finished evaluating condition {i}. Concatenating outputs.")
+        if verbosity >= 1:
+            print(f"Finished evaluating condition {i}. Concatenating outputs.")
         evaluationPerPert  [i] = pd.concat([evaluations[t][0] for t in timescales])
         evaluationPerTarget[i] = pd.concat([evaluations[t][1] for t in timescales])
         assert "prediction_timescale" in evaluationPerPert[i].columns
@@ -618,6 +649,7 @@ def select_comparable_observed_and_predicted(
     perturbed_expression_data_heldout_i: anndata.AnnData, 
     i: int, 
     classifier,
+    verbosity: int 
 ) -> Tuple[anndata.AnnData, anndata.AnnData]:
     """Select a set of predictions that are comparable to the test data, and aggregate the test data within each combination of
     perturbed gene, timepoint, and cell_type. See docs/timeseries_prediction.md for details.
@@ -660,7 +692,8 @@ def select_comparable_observed_and_predicted(
         right_on=['takedown_timepoint', "cell_type", 'perturbation', "expression_level_after_perturbation"],
         how='inner', 
     )
-    print(f"Selected {matched_predictions.shape[0]} samples where observed and predicted expression are comparable.")
+    if verbosity>=2:
+        print(f"Selected {matched_predictions.shape[0]} samples where observed and predicted expression are comparable.")
     assert "is_control" in predictions.obs.columns
     assert "is_control" in test_data.obs.columns
     new_index = [str(j) for j in range(matched_predictions.shape[0])]
@@ -668,10 +701,11 @@ def select_comparable_observed_and_predicted(
     predicted = predictions[matched_predictions["predicted_index"], :]
     predicted.obs_names = new_index
     observed.obs_names = new_index
-    print("Summary of predictions that will be tested:", flush=True)  
-    for c in ['takedown_timepoint', 'cell_type', 'is_control', 'perturbation_type']:
-        print(f"    {predicted.obs[c].value_counts().to_csv(sep=' ')}", flush=True, end = "\n    ")
-    print(f"{predicted.obs['perturbation'].unique().shape[0]} unique perturbation(s)", flush=True)
+    if verbosity>=2:
+        print("Summary of predictions that will be tested:", flush=True)  
+        for c in ['takedown_timepoint', 'cell_type', 'is_control', 'perturbation_type']:
+            print(f"    {predicted.obs[c].value_counts().to_csv(sep=' ')}", flush=True, end = "\n    ")
+        print(f"{predicted.obs['perturbation'].unique().shape[0]} unique perturbation(s)", flush=True)
     return observed, predicted
 
 def safe_squeeze(X):
