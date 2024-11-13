@@ -359,7 +359,7 @@ def summarizeGrossEffects(
         test_data_projection = perturbed_expression_data_heldout_i.obs
         test_data_projection.loc[:, ["viz1", "viz2"]] = viz_2d.predict(perturbed_expression_data_heldout_i.X)
         os.makedirs(os.path.join(outputs, "projection_test"), exist_ok=True)
-        test_data_projection.to_csv(os.path.join(outputs, f"projection_test/{i}.csv"))
+        test_data_projection.to_csv(os.path.join(outputs, f"projection_test/{i}.csv.gz"), compression='gzip')
     except AttributeError:
         pass
 
@@ -414,9 +414,9 @@ def summarizeGrossEffects(
         )
     # Save it all 
     os.makedirs(os.path.join(outputs, "projection_predictions"), exist_ok=True)
-    predicted_expression[i].obs.to_csv(os.path.join(outputs, f"projection_predictions/{i}.csv"))
+    predicted_expression[i].obs.to_csv(os.path.join(outputs, f"projection_predictions/{i}.csv.gz"), compression='gzip')
     os.makedirs(os.path.join(outputs, "projection_train"), exist_ok=True)
-    observed_controls.to_csv(os.path.join(outputs, f"projection_train/{i}.csv"))
+    observed_controls.to_csv(os.path.join(outputs, f"projection_train/{i}.csv.gz"), compression='gzip')
 
     return
 
