@@ -59,7 +59,6 @@ pereggrn_networks.set_grn_location(
 pereggrn_perturbations.set_data_path(
     args.data
 )
-
 # Default args to this script for interactive use
 if args.experiment_name is None:
     args = Namespace(**{
@@ -127,7 +126,6 @@ for i in conditions.index:
     train_mem_file = os.path.join( outputs, "train_memory_requirements", f"{i}.bin")
     if args.amount_to_do in {"models", "missing_models"}:
         perturbed_expression_data_train_i, perturbed_expression_data_heldout_i = get_current_data_split(i, verbose = True)
-        
         gc.collect()
         # Fit models!!
         if \

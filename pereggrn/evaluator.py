@@ -336,7 +336,7 @@ def summarizeGrossEffects(
         perturbed_expression_data_train_i: anndata.AnnData,
         perturbed_expression_data_heldout_i: Optional[anndata.AnnData], 
         predicted_expression: anndata.AnnData, 
-        i: int, 
+        condition: int, 
         outputs: str,
         screen: Optional[pd.DataFrame],
         matching_method: str = "optimal_transport"
@@ -348,20 +348,20 @@ def summarizeGrossEffects(
         perturbed_expression_data_train_i (anndata.AnnData or None): training data (optional)
         perturbed_expression_data_heldout_i (anndata.AnnData): test data.
         predicted_expression (anndata.AnnData): predictions
-        i (int): index of the condition being evaluated
+        condition (int): index of the condition being evaluated
         outputs (str): folder where to save the results
         screen (Optional[pd.DataFrame]): output from a single-phenotype CRISPR screen or similar, 
         matching_method (str): how to match up cells with progenitors to compute perturbation scores. See `ggrn.api.match_timeseries` for options.
             This cannot be "steady_state", because then the velocity would appear to be 0. Thus, it defaults to "optimal_transport", and users can 
             set it independently.
     """
-    print(f"Computing 2d visualizations for condition {i}")
+    print(f"Computing 2d visualizations for condition {condition}")
     # Visualize test data
     try:
         test_data_projection = perturbed_expression_data_heldout_i.obs
         test_data_projection.loc[:, ["viz1", "viz2"]] = viz_2d.predict(perturbed_expression_data_heldout_i.X)
         os.makedirs(os.path.join(outputs, "projection_test"), exist_ok=True)
-        test_data_projection.to_csv(os.path.join(outputs, f"projection_test/{i}.csv.gz"), compression='gzip')
+        test_data_projection.to_csv(os.path.join(outputs, f"projection_test/{condition}.csv.gz"), compression='gzip')
     except AttributeError:
         pass
 
@@ -418,13 +418,13 @@ def summarizeGrossEffects(
     # compute delta expression with each neighbor
     # compute inner products of predicted delta expression and neighbors' delta expression
     # convert to probabilities and then 2d embeddings
-    for i, cell in enumerate(perturbed_expression_data_train_i.obs.index):
-        deltas = perturbed_expression_data_train_i.X[nn[i], :] - perturbed_expression_data_train_i[num_neighbors*[cell], :].X
+    for j, cell in enumerate(perturbed_expression_data_train_i.obs.index):
+        deltas = perturbed_expression_data_train_i.X[nn[j], :] - perturbed_expression_data_train_i[num_neighbors*[cell], :].X
         current_train_predict_pairs = train_data_viz.query(f"training_data_index == @cell", inplace=False).index
         prediction_indices_current = train_data_viz.loc[current_train_predict_pairs, "prediction_index"]
         similarities = deltas.dot(predicted_expression[prediction_indices_current, :].X.T)
         probabilities = np.exp(similarities) / np.exp(similarities).sum(axis = 0)
-        train_data_viz.loc[current_train_predict_pairs, ["viz1","viz2"]] = probabilities.T.dot(perturbed_expression_data_train_i[nn[i],:].obs[["viz1", "viz2"]].values)
+        train_data_viz.loc[current_train_predict_pairs, ["viz1","viz2"]] = probabilities.T.dot(perturbed_expression_data_train_i[nn[j],:].obs[["viz1", "viz2"]].values)
 
     # compute perturbation score as inner product of 2d velocity with 2d predicted delta from perturbation
     train_data_viz["predicted_delta_viz1"] = train_data_viz["viz1"] - train_data_viz["train_viz1"]
@@ -441,7 +441,7 @@ def summarizeGrossEffects(
         )
     # Save it all 
     os.makedirs(os.path.join(outputs, "projection_train"), exist_ok=True)
-    train_data_viz.to_csv(os.path.join(outputs, f"projection_train/{i}.csv.gz"), compression='gzip')
+    train_data_viz.to_csv(os.path.join(outputs, f"projection_train/{condition}.csv.gz"), compression='gzip')
 
     return
 
@@ -474,7 +474,7 @@ def evaluateScreen(
                                   perturbed_expression_data_train_i, 
                                   perturbed_expression_data_heldout_i, 
                                   predicted_expression[i], 
-                                  i=i, 
+                                  condition=i, 
                                   outputs = os.path.join(outputs, "screen"), 
                                   screen = screen, 
                                   matching_method=conditions.loc[i, "matching_method_for_evaluation"])
@@ -532,15 +532,15 @@ def evaluateCausalModel(
             pca20.fit(perturbed_expression_data_train_i.X)
         embedding = conditions.loc[i, "visualization_embedding"]
         try:
-            viz_2d = make_pipeline(KNeighborsRegressor(n_neighbors=10))
+            viz_2d = make_pipeline(KNeighborsRegressor(n_neighbors=1))
             viz_2d.fit(X = perturbed_expression_data_train_i.X, y = perturbed_expression_data_train_i.obsm[embedding][:, 0:2])
             summarizeGrossEffects(
                 viz_2d, 
                 perturbed_expression_data_train_i, 
                 perturbed_expression_data_heldout_i, 
                 predicted_expression[i].copy(), 
-                i,
-                outputs, 
+                condition=i,
+                outputs = outputs, 
                 screen = None, 
                 matching_method=conditions.loc[i, "matching_method_for_evaluation"],
             )

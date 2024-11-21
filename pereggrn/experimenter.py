@@ -999,7 +999,7 @@ def make_predictions(
             raise ValueError(f"Unexpected value of 'starting_expression' in metadata: { conditions.loc[i, 'starting_expression'] }")
         
     try:
-        print("Running GRN.predict()...")
+        print("Predicting on test set...")
         predictions   = grn.predict(
             predictions = predictions,
             predictions_metadata = predictions_metadata,
@@ -1043,8 +1043,10 @@ def make_predictions(
         del fitted_values
 
     if screen is not None:
+        print("Predicting on screened genes...")
         # By default, only make predictions for genes that can be regulators in the model.
         perts_to_screen = screen.copy()
+        perts_to_screen = perts_to_screen.query("perturbation in @grn.train.var_names")
         perts_to_screen = perts_to_screen.query("perturbation in @grn.eligible_regulators")
         perts_to_screen["is_control"] = False
         perts_to_screen = pd.concat([perts_to_screen, pd.DataFrame({"perturbation": ["control"], "is_control": [True]}, index = ["control"])])
