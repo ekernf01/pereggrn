@@ -341,8 +341,7 @@ def summarizeGrossEffects(
         screen: Optional[pd.DataFrame],
         matching_method: str = "optimal_transport"
     ):
-    """For each combination of a training-set cell and a predicted perturbation, create a 2d and 1d summary of the overall perturbation effect.
-
+    """Project train, test, and predicted data into 2d. Match up predictions with relevant controls and adjacent timepoints to summarize gross effects on differentiation.
     Args:
         viz_2d: fitted 2d visualization model trained on the training data. Predicts 2d coordinates from expression.
         perturbed_expression_data_train_i (anndata.AnnData or None): training data (optional)
@@ -365,15 +364,18 @@ def summarizeGrossEffects(
     except AttributeError:
         pass
 
-    # match each prediction with a control and 
-    # compute predicted delta expression 
+    # Visualize predictions
     try:
-        predicted_expression = predicted_expression.to_memory().copy()
-    except ValueError:
+        predicted_expression.to_memory()
+    except:
         pass
+    predicted_expression.obs[["viz1", "viz2"]] = viz_2d.predict(predicted_expression.X)
+
+    # Match predictions with relevant baseline/control expression
+    viz_relevant_metadata = ['viz1', 'viz2', 'cell_type', 'perturbation_type', 'timepoint']
     predicted_expression = experimenter.find_controls(predicted_expression) # the is_control metadata is not saved by the prediction software. Instead, I reconstruct it. This is because I'm dumb.
-    predicted_controls = predicted_expression.obs[predicted_expression.obs['is_control']][['cell_type', 'perturbation_type', 'timepoint', "prediction_timescale"]]
-    predicted_controls["control_index"] = predicted_controls.index.copy()
+    predicted_controls = predicted_expression.obs[predicted_expression.obs['is_control']][viz_relevant_metadata + ["prediction_timescale"]]
+    predicted_controls = predicted_controls.rename(columns={'viz1': 'control_viz1', 'viz2': 'control_viz2'}).drop_duplicates()
     predicted_expression.obs = pd.merge(
         predicted_expression.obs.reset_index(),
         predicted_controls,
@@ -381,67 +383,45 @@ def summarizeGrossEffects(
         how='left'
     ).set_index('index')
     del predicted_controls
-    predicted_expression.X = predicted_expression.X - predicted_expression[predicted_expression.obs["control_index"], :].X
+    predicted_expression.obs["predicted_delta_viz1"] = predicted_expression.obs["viz1"] - predicted_expression.obs["control_viz1"]
+    predicted_expression.obs["predicted_delta_viz2"] = predicted_expression.obs["viz2"] - predicted_expression.obs["control_viz2"]
 
     # Visualize training data
     perturbed_expression_data_train_i.obs[["viz1", "viz2"]] = viz_2d.predict(perturbed_expression_data_train_i.X)
 
     # Compute training data "velocity"-ish thing: delta expression between this timepoint and descendents at next timepoint, assigned by OT 
     perturbed_expression_data_train_i = match_timeseries(perturbed_expression_data_train_i, matching_method=matching_method, matched_control_is_integer=False, do_look_backwards = True)    
-    train_data_viz = perturbed_expression_data_train_i.obs[['cell_type', 'perturbation_type', 'timepoint', "matched_control", "viz1", "viz2"]].copy()
-    train_data_viz = train_data_viz.rename(columns={'viz1': 'train_viz1', 'viz2': 'train_viz2'})
-    has_matched_control = train_data_viz["matched_control"].notnull()  
-    progenitors = train_data_viz.loc[has_matched_control, "matched_control"]
-    train_data_viz.loc[has_matched_control, ['progenitor_viz1', 'progenitor_viz2']] = train_data_viz.loc[progenitors,["train_viz1", "train_viz2"]].values
-    train_data_viz["velocity_viz1"] = train_data_viz["train_viz1"] - train_data_viz["progenitor_viz1"]
-    train_data_viz["velocity_viz2"] = train_data_viz["train_viz2"] - train_data_viz["progenitor_viz2"]
-    
-    # Assemble pairs of training data and cell-type-specific predictions
-    train_data_viz["training_data_index"] = train_data_viz.index.copy()
-    predicted_expression.obs["prediction_index"] = predicted_expression.obs.index.copy()
-    # The perturbation type and expression level after perturbation is hardwired in the part of the code that makes predictions for comparison to low-dimensional CRISPR screen data.
-    # At that point, we lack post-perturbation expression, so we use 0 for KO, max across cells/genes for OE, and we don't simulate KD. 
-    # If the data offer knockDOWNs, we will use the simulated knockOUTs.
-    train_data_viz["perturbation_type"] = train_data_viz["perturbation_type"].str.replace("knockdown", "knockout") 
-    train_data_viz = pd.merge(
-        train_data_viz,
-        predicted_expression.obs[['cell_type', 'timepoint', "perturbation", 'perturbation_type', "prediction_timescale", "prediction_index"]],
-        on                      =['cell_type', 'timepoint',                 'perturbation_type'],
+    observed_controls = perturbed_expression_data_train_i.obs[viz_relevant_metadata + ["matched_control"]].copy()
+    observed_controls = observed_controls.rename(columns={'viz1': 'train_viz1', 'viz2': 'train_viz2'})
+    has_matched_control = observed_controls["matched_control"].notnull()  
+    progenitors = observed_controls.loc[has_matched_control, "matched_control"]
+    observed_controls.loc[has_matched_control, ['progenitor_viz1', 'progenitor_viz2']] = observed_controls.loc[progenitors,["train_viz1", "train_viz2"]].values
+    observed_controls["velocity_viz1"] = observed_controls["train_viz1"] - observed_controls["progenitor_viz1"]
+    observed_controls["velocity_viz2"] = observed_controls["train_viz2"] - observed_controls["progenitor_viz2"]
+
+    # This is hardwired in the part of the code that makes predictions for comparison to low-dimensional CRISPR screen data.
+    # We lack post-perturbation expression, so we use 0 for KO, max across cells/genes for OE, and we don't simulate KD. 
+    observed_controls["perturbation_type"] = observed_controls["perturbation_type"].str.replace("knockdown", "knockout") 
+    # perturbation score: inner product of velocity and predicted log FC
+    observed_controls = pd.merge(
+        observed_controls,
+        predicted_expression.obs[['cell_type', 'timepoint', "perturbation", 'perturbation_type', "predicted_delta_viz1", "predicted_delta_viz2", "prediction_timescale"]],
+        on=['cell_type', 'perturbation_type', 'timepoint'],
         how='left'
     )
-
-    # find nearest trainset neighbors of each trainset cell
-    kdt = KDTree(perturbed_expression_data_train_i.obs[["viz1", "viz2"]].values, leaf_size=30, metric='euclidean')
-    num_neighbors = 50
-    nn = kdt.query(perturbed_expression_data_train_i.obs[["viz1", "viz2"]].values, k=num_neighbors, return_distance=False)
-
-    # compute delta expression with each neighbor
-    # compute inner products of predicted delta expression and neighbors' delta expression
-    # convert to probabilities and then 2d embeddings
-    for j, cell in enumerate(perturbed_expression_data_train_i.obs.index):
-        deltas = perturbed_expression_data_train_i.X[nn[j], :] - perturbed_expression_data_train_i[num_neighbors*[cell], :].X
-        current_train_predict_pairs = train_data_viz.query(f"training_data_index == @cell", inplace=False).index
-        prediction_indices_current = train_data_viz.loc[current_train_predict_pairs, "prediction_index"]
-        similarities = deltas.dot(predicted_expression[prediction_indices_current, :].X.T)
-        probabilities = np.exp(similarities) / np.exp(similarities).sum(axis = 0)
-        train_data_viz.loc[current_train_predict_pairs, ["viz1","viz2"]] = probabilities.T.dot(perturbed_expression_data_train_i[nn[j],:].obs[["viz1", "viz2"]].values)
-
-    # compute perturbation score as inner product of 2d velocity with 2d predicted delta from perturbation
-    train_data_viz["predicted_delta_viz1"] = train_data_viz["viz1"] - train_data_viz["train_viz1"]
-    train_data_viz["predicted_delta_viz2"] = train_data_viz["viz2"] - train_data_viz["train_viz2"]
-    train_data_viz["perturbation_score"] = train_data_viz["velocity_viz1"] * train_data_viz["predicted_delta_viz1"] + train_data_viz["velocity_viz2"] * train_data_viz["predicted_delta_viz2"]
-    
-    # merge in screen data
+    observed_controls["perturbation_score"] = observed_controls["velocity_viz1"] * observed_controls["predicted_delta_viz1"] + observed_controls["velocity_viz2"] * observed_controls["predicted_delta_viz2"]
     if screen is not None:
-        train_data_viz = pd.merge(
-            train_data_viz, 
+        observed_controls = pd.merge(
+            observed_controls, 
             screen, 
             how = "left", 
             on = ["perturbation"]
         )
     # Save it all 
+    os.makedirs(os.path.join(outputs, "projection_predictions"), exist_ok=True)
+    predicted_expression.obs.to_csv(os.path.join(outputs, f"projection_predictions/{condition}.csv.gz"), compression='gzip')
     os.makedirs(os.path.join(outputs, "projection_train"), exist_ok=True)
-    train_data_viz.to_csv(os.path.join(outputs, f"projection_train/{condition}.csv.gz"), compression='gzip')
+    observed_controls.to_csv(os.path.join(outputs, f"projection_train/{condition}.csv.gz"), compression='gzip')
 
     return
 
@@ -478,7 +458,7 @@ def evaluateScreen(
                                   outputs = os.path.join(outputs, "screen"), 
                                   screen = screen, 
                                   matching_method=conditions.loc[i, "matching_method_for_evaluation"])
-        except Exception as e:
+        except KeyError as e:
             if skip_bad_runs:
                 print(f"Failed to project into 2d for evaluation with error: \n'''\n {repr(e)}\n'''\n. Try the following embeddings instead?", flush=True)
                 print(perturbed_expression_data_train_i.obsm.keys())

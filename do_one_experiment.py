@@ -68,12 +68,14 @@ if args.experiment_name is None:
         "output": "experiments",
         "input": "experiments",
         "tf": "../accessory_data/tf_lists",
-        "save_models": False,
+        "save_model": False,
         "skip_bad_runs": False, # Makes debug/traceback easier
         "no_parallel": True, # Makes debug/traceback easier
         "do_memory_profiling": False,
         "verbosity": 2,
     })
+
+args.skip_bad_runs = False
 # Additional bookkeeping
 print("Running experiment", flush = True)
 outputs = os.path.join(args.output, args.experiment_name, "outputs")
