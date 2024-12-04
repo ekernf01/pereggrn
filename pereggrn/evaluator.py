@@ -431,7 +431,7 @@ def evaluateScreen(
     conditions: pd.DataFrame,
     outputs: str,
     screen: pd.DataFrame,
-    skip_bad_runs: bool = True
+    skip_bad_runs: bool
 ): 
     """Evaluate the performance of the predictions on a screen of perturbations.
     
@@ -478,7 +478,8 @@ def evaluateCausalModel(
     do_scatterplots = False, 
     path_to_accessory_data: str = "../accessory_data",
     do_parallel: bool = True,
-    verbosity: int = 0
+    verbosity: int = 0,
+    skip_bad_runs: bool = True,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """Compile plots and tables comparing heldout data and predictions for same. 
 
@@ -493,12 +494,14 @@ def evaluateCausalModel(
         do_scatterplots (bool): Make scatterplots of observed vs predicted expression.
         path_to_accessory_data (str): We use this to add gene metadata on LoF intolerance.
         do_parallel (bool): Use joblib to parallelize the evaluation across perturbations. Recommended unless you are debugging (it ruins tracebacks).
+        skip_bad_runs (bool): If True, skip runs that fail to project into 2d. If False, raise an error.
     """
     evaluationPerPert = {}
     evaluationPerTarget = {}
     evaluations  = []
     for i in predicted_expression.keys(): #equivalent to: i in conditions.index
         perturbed_expression_data_train_i, perturbed_expression_data_heldout_i = get_current_data_split(i)
+        predicted_expression[i] = predicted_expression[i].to_memory(copy = True) # will del this and gc() at end of iteration i
         pca20 = PCA(
             n_components = np.min(
                 [
@@ -518,23 +521,25 @@ def evaluateCausalModel(
                 viz_2d, 
                 perturbed_expression_data_train_i, 
                 perturbed_expression_data_heldout_i, 
-                predicted_expression[i].copy(), 
+                predicted_expression[i], 
                 condition=i,
                 outputs = outputs, 
                 screen = None, 
                 matching_method=conditions.loc[i, "matching_method_for_evaluation"],
             )
-        except Exception as e:
-            print(f"Failed to project into 2d for evaluation with error: \n'''\n {repr(e)}\n'''\n. Try the following embeddings instead?", flush=True)
-            print(perturbed_expression_data_train_i.obsm.keys())
-            embedding = None
-            viz_2d = None
+        except KeyError as e:
+            if skip_bad_runs:
+                print(f"Failed to project into 2d for evaluation with error: \n'''\n {repr(e)}\n'''\n. Try the following embeddings instead?", flush=True)
+                print(perturbed_expression_data_train_i.obsm.keys())
+                embedding = None
+                viz_2d = None
+            else:
+                raise e
         all_test_data = perturbed_expression_data_heldout_i if is_test_set else perturbed_expression_data_train_i # sometimes we predict the training data.
         evaluations = {}
         if "prediction_timescale" not in predicted_expression[i].obs.columns:
             predicted_expression[i].obs["prediction_timescale"] = conditions.loc[i, "prediction_timescale"]
         timescales = predicted_expression[i].obs["prediction_timescale"].unique()
-        predicted_expression[i] = predicted_expression[i].to_memory(copy = True)
         predicted_expression[i] = predicted_expression[i][pd.notnull(predicted_expression[i].X.sum(1)), :]
         predicted_expression[i] = experimenter.find_controls(predicted_expression[i])    # the is_control metadata is not saved by the prediction software. Instead, I reconstruct it. because I'm dumb.
         # to maintain backwards compatibility, this allows the timepoint and celltype fields to be missing.

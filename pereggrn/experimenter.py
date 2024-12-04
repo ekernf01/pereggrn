@@ -1010,7 +1010,7 @@ def make_predictions(
         )
     except Exception as e: 
         if skip_bad_runs:
-            print(f"Caught exception {repr(e)} on experiment {i}; skipping.")
+            print(f"Caught exception\n\n {repr(e)} \nduring prediction on experiment {i}; skipping.")
         else:
             raise e
         return

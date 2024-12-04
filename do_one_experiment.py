@@ -62,7 +62,7 @@ pereggrn_perturbations.set_data_path(
 # Default args to this script for interactive use
 if args.experiment_name is None:
     args = Namespace(**{
-        "experiment_name": "1.2.2_15",
+        "experiment_name": "1.2.2_14",
         "amount_to_do": "missing_models",
         "save_trainset_predictions": False,
         "output": "experiments",
@@ -75,7 +75,6 @@ if args.experiment_name is None:
         "verbosity": 2,
     })
 
-args.skip_bad_runs = False
 # Additional bookkeeping
 print("Running experiment", flush = True)
 outputs = os.path.join(args.output, args.experiment_name, "outputs")
@@ -186,7 +185,7 @@ for i in conditions.index:
                 pd.DataFrame({"walltime (seconds)":train_time, "peak RAM": peak_ram}, index = [i]).to_csv(train_time_file)
             except Exception as e: 
                 if args.skip_bad_runs:
-                    print(f"Caught exception {repr(e)} on experiment {i}; skipping.")
+                    print(f"Caught exception\n\n{repr(e)}  during training on experiment {i}; skipping.")
                 else:
                     raise e
                 continue
@@ -265,6 +264,7 @@ if args.amount_to_do in {"models", "missing_models", "evaluations"}:
         do_scatterplots = False,
         do_parallel = not args.no_parallel, 
         verbosity=args.verbosity,
+        skip_bad_runs=args.skip_bad_runs,
     )
     # pyarrow cannot handle int 
     if args.verbosity >= 1:
@@ -284,6 +284,7 @@ if args.amount_to_do in {"models", "missing_models", "evaluations"}:
             do_scatterplots = False,
             do_parallel = not args.no_parallel,
             verbosity=args.verbosity,
+            skip_bad_runs=args.skip_bad_runs,
         )
         os.makedirs(os.path.join(outputs, "trainset_performance"), exist_ok=True)
         evaluationPerPertTrainset.to_parquet(   os.path.join(outputs, "trainset_performance", "evaluationPerPert.parquet"))
