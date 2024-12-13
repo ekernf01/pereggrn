@@ -448,7 +448,7 @@ def evaluateScreen(
         perturbed_expression_data_train_i, perturbed_expression_data_heldout_i = get_current_data_split(i)
         try:
             embedding = conditions.loc[i, "visualization_embedding"]
-            viz_2d = make_pipeline(KNeighborsRegressor(n_neighbors=10))
+            viz_2d = make_pipeline(KNeighborsRegressor(n_neighbors=20, weights="distance"))
             viz_2d.fit(X = perturbed_expression_data_train_i.X, y = perturbed_expression_data_train_i.obsm[embedding][:, 0:2])
             summarizeGrossEffects(viz_2d, 
                                   perturbed_expression_data_train_i, 
@@ -515,7 +515,7 @@ def evaluateCausalModel(
             pca20.fit(perturbed_expression_data_train_i.X)
         embedding = conditions.loc[i, "visualization_embedding"]
         try:
-            viz_2d = make_pipeline(KNeighborsRegressor(n_neighbors=1))
+            viz_2d = make_pipeline(KNeighborsRegressor(n_neighbors=20, weights="distance"))
             viz_2d.fit(X = perturbed_expression_data_train_i.X, y = perturbed_expression_data_train_i.obsm[embedding][:, 0:2])
             summarizeGrossEffects(
                 viz_2d, 
@@ -759,20 +759,24 @@ def evaluate_per_target(i: int, target: str, expression, predictedExpression):
     mse = np.linalg.norm(observed - predicted) ** 2
     return target, std_dev, mae, mse
 
-def evaluate_across_targets(expression: anndata.AnnData, predictedExpression: anndata.AnnData) -> pd.DataFrame:
+def evaluate_across_targets(expression: anndata.AnnData, predictedExpression: anndata.AnnData, do_parallel = True) -> pd.DataFrame:
     """Evaluate performance for each target gene.
 
     Args:
         expression (anndata.AnnData): actual expression or logfc
         predictedExpression (anndata.AnnData): predicted expression or logfc
+        do_parallel (bool, optional): if True, use joblib to parallelize the evaluation across targets. Defaults to True.
 
     Returns:
         pd.DataFrame: _description_
     """
     targets = predictedExpression.var.index
     predictedExpression = predictedExpression.to_memory()
-    with parallel_config(temp_folder='/tmp', verbose = 1):
-        results = Parallel(n_jobs=cpu_count()-1)(delayed(evaluate_per_target)(i, target, expression.X, predictedExpression.X) for i,target in enumerate(targets))
+    if do_parallel:
+        with parallel_config(temp_folder='/tmp', verbose = 1):
+            results = Parallel(n_jobs=cpu_count())(delayed(evaluate_per_target)(i, target, expression.X, predictedExpression.X) for i,target in enumerate(targets))
+    else:
+        results = [evaluate_per_target(i, target, expression.X, predictedExpression.X) for i,target in enumerate(targets)]
     metrics_per_target = pd.DataFrame(results, columns=["target", "standard_deviation", "mae", "mse"]).set_index("target")
     return metrics_per_target
 
@@ -971,7 +975,7 @@ def evaluateOnePrediction(
     baseline_predicted = baseline_predicted.X.mean(axis=0).squeeze()
     baseline_observed = baseline_observed.X.mean(axis=0).squeeze()
     print("Computing metrics for each target gene.", flush=True)
-    metrics_per_target = evaluate_across_targets(expression, predictedExpression)
+    metrics_per_target = evaluate_across_targets(expression, predictedExpression, do_parallel=do_parallel)
     print("Computing metrics for each perturbed gene.", flush=True)
     metrics = evaluate_across_perts(
             expression = expression,
