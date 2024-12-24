@@ -252,6 +252,7 @@ def lay_out_runs(
 
     # Set a default about handling of time
     backends_with_explicit_timescales = [
+        "ggrn_docker_backend_rnaforecaster",
         "ggrn_docker_backend_prescient",
         "ggrn_docker_backend_timeseries_baseline",
         "autoregressive"
