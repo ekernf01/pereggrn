@@ -443,9 +443,9 @@ def evaluateScreen(
         screen (pd.DataFrame): Output from a single-phenotype CRISPR screen or similar.
         skip_bad_runs (bool): If True, skip runs that fail to project into 2d. If False, raise an error.
     """
-
     for i in predicted_expression.keys():
         perturbed_expression_data_train_i, perturbed_expression_data_heldout_i = get_current_data_split(i)
+        predicted_expression[i] = replace_nans_with_train_data_average(predicted_expression[i], perturbed_expression_data_train_i)
         try:
             embedding = conditions.loc[i, "visualization_embedding"]
             viz_2d = make_pipeline(KNeighborsRegressor(n_neighbors=20, weights="distance"))
@@ -502,6 +502,7 @@ def evaluateCausalModel(
     for i in predicted_expression.keys(): #equivalent to: i in conditions.index
         perturbed_expression_data_train_i, perturbed_expression_data_heldout_i = get_current_data_split(i)
         predicted_expression[i] = predicted_expression[i].to_memory(copy = True) # will del this and gc() at end of iteration i
+        predicted_expression[i] = replace_nans_with_train_data_average(predicted_expression[i], perturbed_expression_data_train_i)
         pca20 = PCA(
             n_components = np.min(
                 [
@@ -1037,6 +1038,16 @@ def evaluateOnePrediction(
                     print(f"Altair saver failed with error {repr(e)}")
     return [metrics, metrics_per_target]
     
+def replace_nans_with_train_data_average(predicted_expression, control_expression):
+    """Replace NaNs in the predicted expression with the average expression of the controls."""
+    for i in range(predicted_expression.shape[0]):
+        relevant_control_cells = \
+            control_expression.obs["cell_type"]==predicted_expression.obs["cell_type"][i] & \
+            control_expression.obs["timepoint"]==predicted_expression.obs["timepoint"][i]
+        genes_mask = np.isnan(predicted_expression[i, :])
+        predicted_expression[i, genes_mask] = control_expression[relevant_control_cells, genes_mask].X.mean(axis=0)
+    return predicted_expression
+
 def assert_perturbation_metadata_match(
         predicted: anndata.AnnData,
         observed: anndata.AnnData, 
