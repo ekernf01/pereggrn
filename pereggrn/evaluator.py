@@ -445,7 +445,8 @@ def evaluateScreen(
     """
     for i in predicted_expression.keys():
         perturbed_expression_data_train_i, perturbed_expression_data_heldout_i = get_current_data_split(i)
-        predicted_expression[i] = replace_nans_with_train_data_average(predicted_expression[i], perturbed_expression_data_train_i)
+        predicted_expression_i = predicted_expression[i].to_memory(copy = True) # will del this and gc() at end of iteration i
+        predicted_expression_i = replace_nans_with_train_data_average(predicted_expression_i, perturbed_expression_data_train_i)
         try:
             embedding = conditions.loc[i, "visualization_embedding"]
             viz_2d = make_pipeline(KNeighborsRegressor(n_neighbors=20, weights="distance"))
@@ -453,7 +454,7 @@ def evaluateScreen(
             summarizeGrossEffects(viz_2d, 
                                   perturbed_expression_data_train_i, 
                                   perturbed_expression_data_heldout_i, 
-                                  predicted_expression[i], 
+                                  predicted_expression_i, 
                                   condition=i, 
                                   outputs = os.path.join(outputs, "screen"), 
                                   screen = screen, 
@@ -466,6 +467,8 @@ def evaluateScreen(
                 viz_2d = None
             else:
                 raise e
+        del predicted_expression_i
+        gc.collect()
     return
 
 def evaluateCausalModel(
@@ -1040,12 +1043,12 @@ def evaluateOnePrediction(
     
 def replace_nans_with_train_data_average(predicted_expression, control_expression):
     """Replace NaNs in the predicted expression with the average expression of the controls."""
-    for i in range(predicted_expression.shape[0]):
+    for i in predicted_expression.obs.index:
         relevant_control_cells = \
-            control_expression.obs["cell_type"]==predicted_expression.obs["cell_type"][i] & \
-            control_expression.obs["timepoint"]==predicted_expression.obs["timepoint"][i]
-        genes_mask = np.isnan(predicted_expression[i, :])
-        predicted_expression[i, genes_mask] = control_expression[relevant_control_cells, genes_mask].X.mean(axis=0)
+            (control_expression.obs["cell_type"]==predicted_expression.obs.loc[i, "cell_type"]) & \
+            (control_expression.obs["timepoint"]==predicted_expression.obs.loc[i, "timepoint"])
+        genes_mask = np.isnan(predicted_expression[i, :].X)
+        predicted_expression[i, genes_mask].X = control_expression[relevant_control_cells, genes_mask].X.mean(axis=0)
     return predicted_expression
 
 def assert_perturbation_metadata_match(
