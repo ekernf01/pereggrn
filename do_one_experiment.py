@@ -236,23 +236,11 @@ if args.amount_to_do in {"models", "missing_models", "evaluations"}:
             if args.verbosity >= 1:
                 print(f"- {i}", flush=True)
             perturbed_expression_data_train_i, perturbed_expression_data_heldout_i = get_current_data_split(i)
-            evaluator.assert_perturbation_metadata_match(predictions[i], perturbed_expression_data_heldout_i)       
+            evaluator.assert_perturbation_metadata_match(predictions[i], perturbed_expression_data_heldout_i)
             del perturbed_expression_data_train_i
             del perturbed_expression_data_heldout_i
             gc.collect()
 
-    if screen is not None:
-        predictions_screen = {i:sc.read_h5ad( os.path.join(outputs, "predictions_screen",   str(i) + ".h5ad" ), backed='r' ) for i in conditions.index}
-        if args.verbosity >= 1:
-            print("Evaluating against single-phenotype screen data", flush = True)
-        evaluator.evaluateScreen(
-            get_current_data_split,
-            predicted_expression=predictions_screen,
-            conditions=conditions,
-            outputs=outputs,
-            screen=screen, 
-            skip_bad_runs=args.skip_bad_runs,
-        )
     if args.verbosity >= 1:
         print("Evaluating against perturbation transcriptomic data", flush = True)
     evaluationPerPert, evaluationPerTarget = evaluator.evaluateCausalModel(
@@ -289,6 +277,20 @@ if args.amount_to_do in {"models", "missing_models", "evaluations"}:
         os.makedirs(os.path.join(outputs, "trainset_performance"), exist_ok=True)
         evaluationPerPertTrainset.to_parquet(   os.path.join(outputs, "trainset_performance", "evaluationPerPert.parquet"))
         evaluationPerTargetTrainset.to_parquet( os.path.join(outputs, "trainset_performance", "evaluationPerTarget.parquet"))
+
+    if screen is not None:
+        predictions_screen = {i:sc.read_h5ad( os.path.join(outputs, "predictions_screen",   str(i) + ".h5ad" ), backed='r' ) for i in conditions.index}
+        if args.verbosity >= 1:
+            print("Evaluating against single-phenotype screen data", flush = True)
+        evaluator.evaluateScreen(
+            get_current_data_split,
+            predicted_expression=predictions_screen,
+            conditions=conditions,
+            outputs=outputs,
+            screen=screen, 
+            skip_bad_runs=args.skip_bad_runs,
+        )
+
 else:
     raise ValueError("--amount_to_do must be one of the allowed options (see them on the help page by passing the -h flag).")
 

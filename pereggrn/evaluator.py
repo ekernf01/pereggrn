@@ -375,7 +375,8 @@ def summarizeGrossEffects(
     viz_relevant_metadata = ['viz1', 'viz2', 'cell_type', 'perturbation_type', 'timepoint']
     predicted_expression = experimenter.find_controls(predicted_expression) # the is_control metadata is not saved by the prediction software. Instead, I reconstruct it. This is because I'm dumb.
     predicted_controls = predicted_expression.obs[predicted_expression.obs['is_control']][viz_relevant_metadata + ["prediction_timescale"]]
-    predicted_controls = predicted_controls.rename(columns={'viz1': 'control_viz1', 'viz2': 'control_viz2'}).drop_duplicates()
+    predicted_controls = predicted_controls.dropna().groupby(["cell_type", "timepoint", "perturbation_type", "prediction_timescale"]).mean().dropna()
+    predicted_controls = predicted_controls.rename(columns={'viz1': 'control_viz1', 'viz2': 'control_viz2'}).drop_duplicates().reset_index()
     predicted_expression.obs = pd.merge(
         predicted_expression.obs.reset_index(),
         predicted_controls,
@@ -577,9 +578,12 @@ def evaluateCausalModel(
                     classifier = experimenter.train_classifier(perturbed_expression_data_train_i, target_key = "cell_type"), 
                     verbosity=verbosity
                 )
-                if current_heldout.n_obs == 0:
+                if (current_heldout.n_obs == 0) or (current_heldout.obs.query("is_control").n_obs == 0):
                     if verbosity >= 1:
-                        print("Skipping evaluation because no comparable observations were found.")
+                        print(f"""
+                              Skipping an evaluation because no comparable observations were found or no matched controls were found in condition {i}, timescale {prediction_timescale}. 
+                              This can happen when large effects push control and treated into different cell types. That situation is handled by other evaluation code. 
+                              """)
                     evaluations[prediction_timescale] = dict()
                     evaluations[prediction_timescale][0] = pd.DataFrame()
                     evaluations[prediction_timescale][1] = pd.DataFrame()
