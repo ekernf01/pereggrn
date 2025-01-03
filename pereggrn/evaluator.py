@@ -578,7 +578,7 @@ def evaluateCausalModel(
                     classifier = experimenter.train_classifier(perturbed_expression_data_train_i, target_key = "cell_type"), 
                     verbosity=verbosity
                 )
-                if (current_heldout.n_obs == 0) or (current_heldout.obs.query("is_control").n_obs == 0):
+                if (current_heldout.n_obs == 0) or (current_heldout.obs.query("is_control").shape[0] == 0):
                     if verbosity >= 1:
                         print(f"""
                               Skipping an evaluation because no comparable observations were found or no matched controls were found in condition {i}, timescale {prediction_timescale}. 
