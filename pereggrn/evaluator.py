@@ -540,115 +540,124 @@ def evaluateCausalModel(
                 viz_2d = None
             else:
                 raise e
-        all_test_data = perturbed_expression_data_heldout_i if is_test_set else perturbed_expression_data_train_i # sometimes we predict the training data.
-        evaluations = {}
-        if "prediction_timescale" not in predicted_expression[i].obs.columns:
-            predicted_expression[i].obs["prediction_timescale"] = conditions.loc[i, "prediction_timescale"]
-        timescales = predicted_expression[i].obs["prediction_timescale"].unique()
-        predicted_expression[i] = predicted_expression[i][pd.notnull(predicted_expression[i].X.sum(1)), :]
-        predicted_expression[i] = experimenter.find_controls(predicted_expression[i])    # the is_control metadata is not saved by the prediction software. Instead, I reconstruct it. because I'm dumb.
-        # to maintain backwards compatibility, this allows the timepoint and celltype fields to be missing.
-        if not "timepoint" in predicted_expression[i].obs.columns: 
-            predicted_expression[i].obs["timepoint"] = 0
-        if not "cell_type" in predicted_expression[i].obs.columns: 
-            predicted_expression[i].obs["cell_type"] = 0
-        
-        if not "timepoint" in all_test_data.obs.columns: 
-            all_test_data.obs["timepoint"] = 0
-        if not "cell_type" in all_test_data.obs.columns: 
-            all_test_data.obs["cell_type"] = 0
-        if verbosity >= 1:
-            print(f"Evaluating condition {i}")
-        evaluations = dict()
-        for prediction_timescale in timescales:
+        try:
+            all_test_data = perturbed_expression_data_heldout_i if is_test_set else perturbed_expression_data_train_i # sometimes we predict the training data.
+            evaluations = {}
+            if "prediction_timescale" not in predicted_expression[i].obs.columns:
+                predicted_expression[i].obs["prediction_timescale"] = conditions.loc[i, "prediction_timescale"]
+            timescales = predicted_expression[i].obs["prediction_timescale"].unique()
+            predicted_expression[i] = predicted_expression[i][pd.notnull(predicted_expression[i].X.sum(1)), :]
+            predicted_expression[i] = experimenter.find_controls(predicted_expression[i])    # the is_control metadata is not saved by the prediction software. Instead, I reconstruct it. because I'm dumb.
+            # to maintain backwards compatibility, this allows the timepoint and celltype fields to be missing.
+            if not "timepoint" in predicted_expression[i].obs.columns: 
+                predicted_expression[i].obs["timepoint"] = 0
+            if not "cell_type" in predicted_expression[i].obs.columns: 
+                predicted_expression[i].obs["cell_type"] = 0
+            
+            if not "timepoint" in all_test_data.obs.columns: 
+                all_test_data.obs["timepoint"] = 0
+            if not "cell_type" in all_test_data.obs.columns: 
+                all_test_data.obs["cell_type"] = 0
             if verbosity >= 1:
-                print(f"    Timescale selected: {prediction_timescale}.")
-            predicted_expression_it = predicted_expression[i]
-            predicted_expression_it = predicted_expression_it[predicted_expression_it.obs["prediction_timescale"]==prediction_timescale, :]
-            if conditions.loc[i, "type_of_split"] == "timeseries":
-                assert any(predicted_expression[i].obs["is_control"]), f"No controls found among predictions when evaluating condition {i}."
-                # For timeseries-versus-perturbseq splits, baseline and observed-to-predicted matching are more complicated. See `docs/timeseries_prediction.md` for details.
-                # this returns anndatas in the order OBSERVED, PREDICTED
-                current_heldout, matched_predictions = select_comparable_observed_and_predicted(
-                    conditions = conditions,
-                    predictions = predicted_expression_it, 
-                    perturbed_expression_data_heldout_i = all_test_data, 
-                    i = i,
-                    # I don't care if this is somewhat redundant with the classifier used below. We need both even if not elegant.
-                    classifier = experimenter.train_classifier(perturbed_expression_data_train_i, target_key = "cell_type"), 
-                    verbosity=verbosity
-                )
-                if (current_heldout.n_obs == 0) or (current_heldout.obs.query("is_control").shape[0] == 0):
-                    if verbosity >= 1:
-                        print(f"""
-                              Skipping an evaluation because no comparable observations were found or no matched controls were found in condition {i}, timescale {prediction_timescale}. 
-                              This can happen when large effects push control and treated into different cell types. That situation is handled by other evaluation code. 
-                              """)
-                    evaluations[prediction_timescale] = dict()
-                    evaluations[prediction_timescale][0] = pd.DataFrame()
-                    evaluations[prediction_timescale][1] = pd.DataFrame()
-                    continue
-                # The sensible baseline differs between predicted and test data. 
-                # For the test data, it should be a **test-set** control sample from the same timepoint and cell type. 
-                # For the predictions, it should be a **prediction under no perturbations** from the same timepoint and cell type. 
-                # Because the upstream code selects perturbations to predict from the test set, the names of the controls should match the heldout data.
-                assert any(current_heldout.obs["is_control"]), f"No controls found among heldout data when evaluating condition {i}, timescale {prediction_timescale}."
-                assert any(matched_predictions.obs["is_control"]), f"No controls found among predictions when evaluating condition {i}, timescale {prediction_timescale}."
-                baseline_observed = current_heldout.copy()[current_heldout.obs["is_control"], :]
-                baseline_predicted = matched_predictions[ matched_predictions.obs["is_control"], : ].copy()
-            else:
-                current_heldout = all_test_data
-                matched_predictions = predicted_expression_it
-                # For train-test splits of a single perturbset, the controls are all in the training data. 
-                # The same baseline can be used for the training and test data, and it needs to be extracted from the training data. 
-                assert any(perturbed_expression_data_train_i.obs["is_control"]), "No controls found."
-                baseline_observed  = perturbed_expression_data_train_i[[bool(b) for b in perturbed_expression_data_train_i.obs["is_control"]], :]
-                baseline_predicted = baseline_observed.copy()
+                print(f"Evaluating condition {i}")
+            evaluations = dict()
+            for prediction_timescale in timescales:
+                if verbosity >= 1:
+                    print(f"    Timescale selected: {prediction_timescale}.")
+                predicted_expression_it = predicted_expression[i]
+                predicted_expression_it = predicted_expression_it[predicted_expression_it.obs["prediction_timescale"]==prediction_timescale, :]
+                if conditions.loc[i, "type_of_split"] == "timeseries":
+                    assert any(predicted_expression[i].obs["is_control"]), f"No controls found among predictions when evaluating condition {i}."
+                    # For timeseries-versus-perturbseq splits, baseline and observed-to-predicted matching are more complicated. See `docs/timeseries_prediction.md` for details.
+                    # this returns anndatas in the order OBSERVED, PREDICTED
+                    current_heldout, matched_predictions = select_comparable_observed_and_predicted(
+                        conditions = conditions,
+                        predictions = predicted_expression_it, 
+                        perturbed_expression_data_heldout_i = all_test_data, 
+                        i = i,
+                        # I don't care if this is somewhat redundant with the classifier used below. We need both even if not elegant.
+                        classifier = experimenter.train_classifier(perturbed_expression_data_train_i, target_key = "cell_type"), 
+                        verbosity=verbosity
+                    )
+                    if (current_heldout.n_obs == 0) or (current_heldout.obs.query("is_control").shape == 0):
+                        if verbosity >= 1:
+                            print(f"""
+                                Skipping an evaluation because no comparable observations were found or no matched controls were found in condition {i}, timescale {prediction_timescale}. 
+                                This can happen when large effects push control and treated into different cell types. That situation is handled by other evaluation code. 
+                                """)
+                        evaluations[prediction_timescale] = dict()
+                        evaluations[prediction_timescale][0] = pd.DataFrame()
+                        evaluations[prediction_timescale][1] = pd.DataFrame()
+                        continue
+                    # The sensible baseline differs between predicted and test data. 
+                    # For the test data, it should be a **test-set** control sample from the same timepoint and cell type. 
+                    # For the predictions, it should be a **prediction under no perturbations** from the same timepoint and cell type. 
+                    # Because the upstream code selects perturbations to predict from the test set, the names of the controls should match the heldout data.
+                    assert any(current_heldout.obs["is_control"]), f"No controls found among heldout data when evaluating condition {i}, timescale {prediction_timescale}."
+                    assert any(matched_predictions.obs["is_control"]), f"No controls found among predictions when evaluating condition {i}, timescale {prediction_timescale}."
+                    baseline_observed = current_heldout.copy()[current_heldout.obs["is_control"], :]
+                    baseline_predicted = matched_predictions[ matched_predictions.obs["is_control"], : ].copy()
+                else:
+                    current_heldout = all_test_data
+                    matched_predictions = predicted_expression_it
+                    # For train-test splits of a single perturbset, the controls are all in the training data. 
+                    # The same baseline can be used for the training and test data, and it needs to be extracted from the training data. 
+                    assert any(perturbed_expression_data_train_i.obs["is_control"]), "No controls found."
+                    baseline_observed  = perturbed_expression_data_train_i[[bool(b) for b in perturbed_expression_data_train_i.obs["is_control"]], :]
+                    baseline_predicted = baseline_observed.copy()
 
-            assert "timepoint" in current_heldout.obs.columns
+                assert "timepoint" in current_heldout.obs.columns
+                if verbosity >= 1:
+                    print("Training a classifier.")
+                classifier_labels = "cell_type" if (conditions.loc[i, "type_of_split"]=="timeseries") else None # If you pass None, it will look for "louvain" or give up.
+                c = experimenter.train_classifier(perturbed_expression_data_train_i, target_key = classifier_labels)
+                evaluations[prediction_timescale] = evaluateOnePrediction(
+                    expression = current_heldout,
+                    predictedExpression = matched_predictions,
+                    baseline_observed = baseline_observed,
+                    baseline_predicted = baseline_predicted,
+                    doPlots=do_scatterplots,
+                    outputs = outputs,
+                    experiment_name = i,
+                    classifier = c,
+                    pca20 = pca20,
+                    do_parallel=do_parallel,
+                )
+                # Add detail on characteristics of each gene that might make it more predictable
+                evaluations[prediction_timescale][0], _ = addGeneMetadata(
+                    evaluations[prediction_timescale][0],
+                    genes_considered_as="perturbations",
+                    adata=perturbed_expression_data_train_i,
+                    adata_test=current_heldout, 
+                    path_to_accessory_data=path_to_accessory_data
+                )
+                evaluations[prediction_timescale][1], _ = addGeneMetadata(
+                    evaluations[prediction_timescale][1],
+                    genes_considered_as="targets",
+                    adata=perturbed_expression_data_train_i,
+                    adata_test=current_heldout,
+                    path_to_accessory_data=path_to_accessory_data
+                )
+                evaluations[prediction_timescale][0]["index"] = i
+                evaluations[prediction_timescale][1]["index"] = i
+                evaluations[prediction_timescale][0]["prediction_timescale"] = prediction_timescale
+                evaluations[prediction_timescale][1]["prediction_timescale"] = prediction_timescale
             if verbosity >= 1:
-                print("Training a classifier.")
-            classifier_labels = "cell_type" if (conditions.loc[i, "type_of_split"]=="timeseries") else None # If you pass None, it will look for "louvain" or give up.
-            c = experimenter.train_classifier(perturbed_expression_data_train_i, target_key = classifier_labels)
-            evaluations[prediction_timescale] = evaluateOnePrediction(
-                expression = current_heldout,
-                predictedExpression = matched_predictions,
-                baseline_observed = baseline_observed,
-                baseline_predicted = baseline_predicted,
-                doPlots=do_scatterplots,
-                outputs = outputs,
-                experiment_name = i,
-                classifier = c,
-                pca20 = pca20,
-                do_parallel=do_parallel,
-            )
-            # Add detail on characteristics of each gene that might make it more predictable
-            evaluations[prediction_timescale][0], _ = addGeneMetadata(
-                evaluations[prediction_timescale][0],
-                genes_considered_as="perturbations",
-                adata=perturbed_expression_data_train_i,
-                adata_test=current_heldout, 
-                path_to_accessory_data=path_to_accessory_data
-            )
-            evaluations[prediction_timescale][1], _ = addGeneMetadata(
-                evaluations[prediction_timescale][1],
-                genes_considered_as="targets",
-                adata=perturbed_expression_data_train_i,
-                adata_test=current_heldout,
-                path_to_accessory_data=path_to_accessory_data
-            )
-            evaluations[prediction_timescale][0]["index"] = i
-            evaluations[prediction_timescale][1]["index"] = i
-            evaluations[prediction_timescale][0]["prediction_timescale"] = prediction_timescale
-            evaluations[prediction_timescale][1]["prediction_timescale"] = prediction_timescale
-        if verbosity >= 1:
-            print(f"Finished evaluating condition {i}. Concatenating outputs.")
-        evaluationPerPert  [i] = pd.concat([evaluations[t][0] for t in timescales])
-        evaluationPerTarget[i] = pd.concat([evaluations[t][1] for t in timescales])
-        assert "prediction_timescale" in evaluationPerPert[i].columns
-        assert "prediction_timescale" in evaluationPerTarget[i].columns
-        predicted_expression[i] = None
-        gc.collect()
+                print(f"Finished evaluating condition {i}. Concatenating outputs.")
+            evaluationPerPert  [i] = pd.concat([evaluations[t][0] for t in timescales])
+            evaluationPerTarget[i] = pd.concat([evaluations[t][1] for t in timescales])
+            assert evaluationPerPert[i].shape[0]>0, f"No successful evaluations found for condition {i}."
+            assert evaluationPerTarget[i].shape[0]>0, f"No successful evaluations found for condition {i}."
+            assert "prediction_timescale" in evaluationPerPert[i].columns
+            assert "prediction_timescale" in evaluationPerTarget[i].columns
+            predicted_expression[i] = None
+            gc.collect()
+        except Exception as e:
+            if skip_bad_runs:
+                print(f"Failed to evaluate condition {i} with error message: {repr(e)}")
+            else:
+                raise e
+        
     # Concatenate and add some extra info
     # postprocessEvaluations wants a list of datafrmaes with one dataframe per row in conditions
     try: 
@@ -706,8 +715,8 @@ def select_comparable_observed_and_predicted(
     matched_predictions = pd.merge(
         test_data.obs[  [         'timepoint',          "cell_type", 'perturbation', "expression_level_after_perturbation", "observed_index"]], 
         predictions.obs[['takedown_timepoint',          "cell_type", 'perturbation', "expression_level_after_perturbation", "predicted_index"]], 
-        left_on =['timepoint',          "cell_type", 'perturbation', "expression_level_after_perturbation"],
-        right_on=['takedown_timepoint', "cell_type", 'perturbation', "expression_level_after_perturbation"],
+        left_on =['timepoint',          'cell_type', 'perturbation', "expression_level_after_perturbation"],
+        right_on=['takedown_timepoint', 'cell_type', 'perturbation', "expression_level_after_perturbation"],
         how='inner', 
     )
     if verbosity>=2:
@@ -724,6 +733,8 @@ def select_comparable_observed_and_predicted(
         for c in ['takedown_timepoint', 'cell_type', 'is_control', 'perturbation_type']:
             print(f"    {predicted.obs[c].value_counts().to_csv(sep=' ')}", flush=True, end = "\n    ")
         print(f"{predicted.obs['perturbation'].unique().shape[0]} unique perturbation(s)", flush=True)
+        if predicted.obs["is_control"].sum()==0:
+            print("No controls found in a group of predictions.", flush=True)
     return observed, predicted
 
 def safe_squeeze(X):
@@ -1047,6 +1058,13 @@ def evaluateOnePrediction(
     
 def replace_nans_with_train_data_average(predicted_expression, control_expression):
     """Replace NaNs in the predicted expression with the average expression of the controls."""
+    # Maintain backwards compatbility for older batches of predictions. 
+    if "cell_type" not in control_expression.obs.columns:
+        predicted_expression.obs["cell_type"] = 0
+        control_expression.obs["cell_type"] = 0
+    if "timepoint" not in control_expression.obs.columns:
+        predicted_expression.obs["timepoint"] = 0
+        control_expression.obs["timepoint"] = 0
     for i in predicted_expression.obs.index:
         relevant_control_cells = \
             (control_expression.obs["cell_type"]==predicted_expression.obs.loc[i, "cell_type"]) & \

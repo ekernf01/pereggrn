@@ -296,17 +296,9 @@ else:
 
 print("Experiment done at " + str(datetime.datetime.now()), flush = True)
 
-# Avoid a useless error by defining main.
+# Avoid a needless error by defining main.
 # This has to do with how python packages typically make command line scripts available.
 # A way generally considered better would be to put all the code in main() or parse_args(), then call main() at the end.
 # This helps if you want to import this script and do e.g. unit tests on individual functions. 
 def main():
     return
-
-# def parse_arguments():
-#     argument_parse_code
-#     return arguments
-
-# if __name__ == '__main__':
-#     arguments = parse_arguments()
-#     main(*arguments)
