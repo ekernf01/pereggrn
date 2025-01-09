@@ -262,7 +262,8 @@ def lay_out_runs(
             # This regex removes the prefix docker____ekernf01/ so we can match more easily
             backend_short_name = re.sub(".*\/", "", conditions.loc[i, "regression_method"])
             conditions.loc[i, "does_simulation_progress"] = backend_short_name in backends_with_explicit_timescales
-
+            if backend_short_name in {"ggrn_docker_backend_rnaforecaster", "ggrn_docker_backend_timeseries_baseline"} and conditions.loc[i, "matching_method"] == "steady_state":
+                conditions.loc[i, "does_simulation_progress"] = False
 
     conditions.index.name = "condition"
     conditions["baseline_condition"] = baseline_condition
