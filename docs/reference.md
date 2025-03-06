@@ -43,7 +43,7 @@ Experiment metadata files are JSON dictionaries with a limited set of keys. Many
     - If "simple", then we use a simple random split, and replicates of the same perturbation are allowed to go into different folds or the same fold. All controls still go in the training data.
     - If "genetic_interaction", we put single perturbations and controls in the training set, and multiple perturbations in the test set.
     - If "demultiplexing", we put multiple perturbations and controls in the training set, and single perturbations in the test set.
-    - If "stratified", we put some samples from each perturbation in the training set, and if there is replication, we put some in the test set. 
+    - If "stratified", we split data within each perturbation, guaranteeing that any perturbation in the test data was seen during training. 
     - If "custom", we load the test set from the file 'custom_test_sets/<data_split_seed>.json'. It should be formatted as a json list containing names of observations to reserve for the test set. See the how-to for more help doing this.
     - If "timeseries", then we assume the data are already split into separate `train.h5ad` (containing timeseries data) and `test.h5ad` (containing perturb-seq or similar). 
 - `network_datasets` describes a GRN using the same names as our network collection. The behavior is complicated because the network collection is hierarchical: individual sources often include tissue-specific subnetworks. The value associated with the `network_datasets` key is a dict. In this dict, keys are network sources. Values are (sub-)dicts controlling which tissue-specific networks are included and whether/how they are aggregated. Each (sub-)dict controls behavior as follows. 
