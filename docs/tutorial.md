@@ -2,6 +2,8 @@
 
 The `pereggrn` software was written for an [expression forecasting benchmark project](https://github.com/ekernf01/perturbation_benchmarking). It compares predicted and observed expression under novel genetic perturbations. In this tutorial, you will reproduce a portion of a figure panel from scratch: you'll download data, install software, configure an experiment, run the experiment, and plot the results. 
 
+Note: this tutorial uses a simpler and quicker version of the software and data setup at the expense of much functionality. Elsewhere we have a [guide for a full installation](https://github.com/ekernf01/perturbation_benchmarking/blob/main/environment/install.md).
+
 #### Working directory
 
 You need a Mac or Linux computer for this. Set up a folder `expression_forecasting_benchmarks`. This will be the working directory for all commands unless otherwise noted. 
