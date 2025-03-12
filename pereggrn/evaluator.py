@@ -520,27 +520,28 @@ def evaluateCausalModel(
         except AttributeError: # data not sparse
             pca20.fit(perturbed_expression_data_train_i.X)
         embedding = conditions.loc[i, "visualization_embedding"]
-        try:
-            viz_2d = make_pipeline(KNeighborsRegressor(n_neighbors=20, weights="distance"))
-            viz_2d.fit(X = perturbed_expression_data_train_i.X, y = perturbed_expression_data_train_i.obsm[embedding][:, 0:2])
-            summarizeGrossEffects(
-                viz_2d, 
-                perturbed_expression_data_train_i, 
-                perturbed_expression_data_heldout_i, 
-                predicted_expression[i], 
-                condition=i,
-                outputs = outputs, 
-                screen = None, 
-                matching_method=conditions.loc[i, "matching_method_for_evaluation"],
-            )
-        except KeyError as e:
-            if skip_bad_runs:
-                print(f"Failed to project into 2d for evaluation with error: \n'''\n {repr(e)}\n'''\n. Try the following embeddings instead?", flush=True)
-                print(perturbed_expression_data_train_i.obsm.keys())
-                embedding = None
-                viz_2d = None
-            else:
-                raise e
+        if conditions.loc[i, "type_of_split"] == "timeseries":
+            try:
+                viz_2d = make_pipeline(KNeighborsRegressor(n_neighbors=20, weights="distance"))
+                viz_2d.fit(X = perturbed_expression_data_train_i.X, y = perturbed_expression_data_train_i.obsm[embedding][:, 0:2])
+                summarizeGrossEffects(
+                    viz_2d, 
+                    perturbed_expression_data_train_i, 
+                    perturbed_expression_data_heldout_i, 
+                    predicted_expression[i], 
+                    condition=i,
+                    outputs = outputs, 
+                    screen = None, 
+                    matching_method=conditions.loc[i, "matching_method_for_evaluation"],
+                )
+            except KeyError as e:
+                if skip_bad_runs:
+                    print(f"Failed to project into 2d for evaluation with error: \n'''\n {repr(e)}\n'''\n. Try the following embeddings instead?", flush=True)
+                    print(perturbed_expression_data_train_i.obsm.keys())
+                    embedding = None
+                    viz_2d = None
+                else:
+                    raise e
         try:
             all_test_data = perturbed_expression_data_heldout_i if is_test_set else perturbed_expression_data_train_i # sometimes we predict the training data.
             evaluations = {}
