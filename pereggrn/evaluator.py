@@ -876,6 +876,7 @@ def evaluate_across_perts(
     """
     assert "timepoint" in expression.obs.columns
     # Thank you to JohnE: https://stackoverflow.com/a/41638343/3371472
+    predictedExpression.obs.index.name = "index"
     group_numbers = predictedExpression.obs[group_by].drop_duplicates().reset_index(drop=True).reset_index().rename({"index":"group"}, axis=1)
     predictedExpression.obs = predictedExpression.obs.reset_index().merge( group_numbers, on=group_by, how = "left" ).set_index('index')
     print(f"Evaluating {predictedExpression.obs['group'].max()} groups based on {group_by}.", flush=True)
