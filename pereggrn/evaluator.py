@@ -376,7 +376,8 @@ def summarizeGrossEffects(
     predicted_expression = experimenter.find_controls(predicted_expression) # the is_control metadata is not saved by the prediction software. Instead, I reconstruct it. This is because I'm dumb.
     predicted_controls = predicted_expression.obs[predicted_expression.obs['is_control']][viz_relevant_metadata + ["prediction_timescale"]]
     predicted_controls = predicted_controls.dropna().groupby(["cell_type", "timepoint", "perturbation_type", "prediction_timescale"]).mean().dropna()
-    predicted_controls = predicted_controls.rename(columns={'viz1': 'control_viz1', 'viz2': 'control_viz2'}).drop_duplicates().reset_index()
+    predicted_controls = predicted_controls.rename(columns={'viz1': 'control_viz1', 'viz2': 'control_viz2'}).reset_index().drop_duplicates()
+    predicted_expression.obs.index.name = "index"
     predicted_expression.obs = pd.merge(
         predicted_expression.obs.reset_index(),
         predicted_controls,

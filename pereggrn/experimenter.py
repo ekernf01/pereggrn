@@ -608,7 +608,7 @@ def _splitDataHelper(adata: anndata.AnnData,
     train/test size specified by the user, we send some perturbations to the training set at random even if we would be able to 
     use them in the test set.
 
-    If type_of_split is not "interventional", we make no provision for dealing with the above concerns.
+    If type_of_split is not "interventional", we do not consider any of the above concerns.
 
     """
     assert type(allowedRegulators) is list or type(allowedRegulators) is set, "allowedRegulators must be a list or set of allowed genes"
