@@ -62,7 +62,7 @@ pereggrn_perturbations.set_data_path(
 # Default args to this script for interactive use
 if args.experiment_name is None:
     args = Namespace(**{
-        "experiment_name": "1.5.1_0",
+        "experiment_name": "1.8.2_1",
         "amount_to_do": "missing_models",
         "save_trainset_predictions": False,
         "output": "experiments",
@@ -97,7 +97,11 @@ perturbed_expression_data, networks, conditions, timeseries_expression_data, scr
 )
 
 # Split the data
-def get_current_data_split(i, verbose = False):
+def get_current_data_split(i, verbose = False, perturbed_expression_data = perturbed_expression_data):
+    if conditions.loc[i, "merge_replicates"]:
+        perturbed_expression_data = experimenter.averageWithinPerturbation(ad=perturbed_expression_data)
+        if timeseries_expression_data is not None:
+            raise ValueError("We do not currently support merging of replicates in time-series training data.")
     perts = experimenter.filter_genes( perturbed_expression_data, num_genes = conditions.loc[i, "num_genes"], outputs = outputs)
     if conditions.loc[i, "type_of_split"] == "timeseries":
         return timeseries_expression_data[:, perts.var_names], perts

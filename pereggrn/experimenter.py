@@ -417,11 +417,6 @@ def set_up_data_networks_conditions(metadata, amount_to_do, outputs):
         screen = pereggrn_perturbations.load_perturbation(metadata["perturbation_dataset"], is_screen=True)
     except FileNotFoundError:
         screen = None
-    elap = "expression_level_after_perturbation"
-    if metadata["merge_replicates"]:
-        perturbed_expression_data = averageWithinPerturbation(ad=perturbed_expression_data)
-        if timeseries_expression_data is not None:
-            raise ValueError("We do not currently support merging of replicates in time-series training data.")
     print("...done. Getting networks...")
     # Get networks
     networks = {}
