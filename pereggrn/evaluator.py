@@ -308,7 +308,9 @@ def convert_to_simple_types(df: pd.DataFrame, types = [int, float, str]) -> pd.D
         for t in types:
             try:
                 oldtype = df[c].dtype
-                assert all(df[c].astype(t).astype(oldtype)==df[c])
+                # If converting to str, that's usually the last option, so just yolo it; don't check if it's the same.
+                if not t==str:
+                    assert all(df[c].astype(t).astype(oldtype)==df[c])
                 df[c] = df[c].astype(t)
                 break
             except:
