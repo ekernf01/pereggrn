@@ -140,7 +140,7 @@ ggplot(long_format) +
   scale_fill_gradient2(mid = "grey90", low = "blue", high = "yellow") 
 ```
 
-The result should look like the top left portion of figure S1.
+The result should look like the top left portion of figure S1 in the preprint v2.
 
 ### Next steps
 
