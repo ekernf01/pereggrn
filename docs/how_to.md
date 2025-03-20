@@ -1,6 +1,6 @@
 ## How to use, re-use, and re-purpose our benchmarking infrastructure
 
-We hope this documentation makes it easy for you to achieve any of the goals outlined below. If there's something missing or incorrect, please file a github issue; we're excited to support anyone repurposing this work. 
+We hope this documentation makes it easy for you to use PEREGGRN with your own datasets, networks, methods, and experimental designs. If there's something missing or incorrect, please file a github issue; we're excited to support anyone repurposing this work. 
 
 ### Prereqs and general procedure
 
