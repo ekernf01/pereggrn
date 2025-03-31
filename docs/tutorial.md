@@ -1,8 +1,12 @@
-### PEREGGRN: PErturbation Response Evaluation via a Grammar of Gene Regulatory Networks
+## PEREGGRN: PErturbation Response Evaluation via a Grammar of Gene Regulatory Networks
 
 The `pereggrn` software was written for an [expression forecasting benchmark project](https://github.com/ekernf01/perturbation_benchmarking). It compares predicted and observed expression under novel genetic perturbations. In this tutorial, you will reproduce a portion of a figure panel from scratch: you'll download data, install software, configure an experiment, run the experiment, and plot the results. 
 
 Note: this tutorial uses a simpler and quicker version of the software and data setup at the expense of much functionality. Elsewhere we have a [guide for a full installation](https://github.com/ekernf01/perturbation_benchmarking/blob/main/environment/install.md).
+
+### Installation
+
+Here's a very minimal version of the data and dependencies needed to try PEREGGRN. You can skip this if you already [installed the benchmarking results](https://github.com/ekernf01/perturbation_benchmarking/blob/main/environment/install.md).
 
 #### Working directory
 
@@ -38,6 +42,10 @@ do
     pip install git+https://github.com/ekernf01/${p}
 done
 ```
+
+### Usage
+
+Ok, let's do a science. 
 
 #### Configure an experiment
 
