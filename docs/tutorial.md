@@ -6,7 +6,7 @@ Note: this tutorial uses a simpler and quicker version of the software and data 
 
 ### Installation
 
-Here's a very minimal version of the data and dependencies needed to try PEREGGRN. You can skip this if you already [installed the benchmarking results](https://github.com/ekernf01/perturbation_benchmarking/blob/main/environment/install.md).
+Here's a very minimal version of the data and dependencies needed to try PEREGGRN. You can skip this if you already installed the benchmarking results.
 
 #### Working directory
 
